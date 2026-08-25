@@ -1,25 +1,37 @@
 (function(){
   const THEME_KEY='delta-theme';
 
+  function refreshThemeToggle(value){
+    const btn=document.querySelector('.theme-mini-toggle');
+    if(!btn)return;
+    const dark=value==='dark';
+    btn.textContent=dark?'🌙':'☀️';
+    btn.setAttribute('aria-label',dark?'تغییر به حالت روشن':'تغییر به حالت تاریک');
+    btn.setAttribute('title',dark?'حالت تاریک':'حالت روشن');
+  }
+
   function applyTheme(theme){
     const value=theme==='dark'?'dark':'light';
     document.documentElement.dataset.theme=value;
     try{localStorage.setItem(THEME_KEY,value)}catch(_){ }
     document.querySelectorAll('[data-theme-choice]').forEach(btn=>btn.classList.toggle('active',btn.dataset.themeChoice===value));
+    refreshThemeToggle(value);
   }
 
   try{applyTheme(localStorage.getItem(THEME_KEY)==='dark'?'dark':'light')}catch(_){applyTheme('light')}
 
   function installThemeSwitcher(){
-    const host=document.querySelector('.mobile-drawer-panel[data-drawer-panel="main"] .mobile-drawer-links');
-    if(!host||host.querySelector('.theme-switch-box'))return;
-    const box=document.createElement('div');
-    box.className='theme-switch-box';
-    box.innerHTML=`<div class="theme-switch-title"><span>◐</span><span>ظاهر سایت</span></div><div class="theme-switch-actions"><button type="button" data-theme-choice="light"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg>روشن</button><button type="button" data-theme-choice="dark"><svg viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"></path></svg>تاریک</button></div>`;
-    host.appendChild(box);
-    box.querySelectorAll('[data-theme-choice]').forEach(btn=>btn.addEventListener('click',()=>applyTheme(btn.dataset.themeChoice)));
-    const current=document.documentElement.dataset.theme||'light';
-    box.querySelectorAll('[data-theme-choice]').forEach(btn=>btn.classList.toggle('active',btn.dataset.themeChoice===current));
+    document.querySelectorAll('.theme-switch-box').forEach(el=>el.remove());
+    const head=document.querySelector('.mobile-drawer-head');
+    if(!head||head.querySelector('.theme-mini-toggle'))return;
+    const btn=document.createElement('button');
+    btn.className='theme-mini-toggle';
+    btn.type='button';
+    btn.addEventListener('click',function(){
+      applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+    });
+    head.appendChild(btn);
+    refreshThemeToggle(document.documentElement.dataset.theme||'light');
   }
 
   function installProgressiveAuth(){
@@ -35,7 +47,7 @@
         <div class="auth-progress-step active" data-auth-step="email">
           <div class="auth-heading"><h2>ورود یا ثبت‌نام</h2><p>برای ادامه فقط ایمیل خود را وارد کنید.</p></div>
           <form class="auth-modern-form" id="email-first-form" novalidate>
-            <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input id="auth-first-email" type="email" autocomplete="email" placeholder="example@email.com" required></div></label>
+            <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input id="auth-first-email" type="email" autocomplete="email" required></div></label>
             <div class="auth-progress-error" id="auth-email-error"></div>
             <div class="auth-progress-loading" id="auth-email-loading">در حال بررسی ایمیل...</div>
             <button class="auth-primary" type="submit">ادامه</button>
@@ -116,5 +128,9 @@
     reset();
   }
 
-  document.addEventListener('DOMContentLoaded',function(){installThemeSwitcher();installProgressiveAuth()});
+  document.addEventListener('DOMContentLoaded',function(){
+    installThemeSwitcher();
+    installProgressiveAuth();
+    document.querySelectorAll('input[type="email"]').forEach(input=>input.removeAttribute('placeholder'));
+  });
 })();
