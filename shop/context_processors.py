@@ -1,6 +1,6 @@
 from django.db.models import Count, Prefetch, Q
 
-from .models import Category, Product, SiteSetting, SocialLink, TrustBadge
+from .models import Announcement, AnnouncementRead, Category, Product, SiteSetting, SocialLink, TrustBadge
 
 
 def _nav_queryset():
@@ -21,10 +21,10 @@ def store_context(request):
     clean_cart = {}
     if isinstance(raw_cart, dict) and raw_cart:
         ids = [int(key) for key in raw_cart.keys() if str(key).isdigit()]
-        products = {p.id: p for p in Product.objects.filter(id__in=ids, is_active=True, stock__gt=0).only("id", "stock")}
+        products = {p.id: p for p in Product.objects.filter(id__in=ids, is_active=True).only("id", "stock", "reserved_stock")}
         for pid, product in products.items():
             try:
-                qty = max(0, min(int(raw_cart.get(str(pid), 0)), product.stock))
+                qty = max(0, min(int(raw_cart.get(str(pid), 0)), product.available_stock))
             except (TypeError, ValueError):
                 qty = 0
             if qty:
@@ -48,6 +48,15 @@ def store_context(request):
     enamad_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ENAMAD).first() if settings else None
     zarinpal_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ZARINPAL).first() if settings else None
 
+    announcements = list(Announcement.objects.filter(is_active=True)[:20]) if settings else []
+    unread_announcement_count = 0
+    if getattr(request, "user", None) is not None and request.user.is_authenticated and announcements:
+        ids = [item.id for item in announcements]
+        read_ids = set(
+            AnnouncementRead.objects.filter(user=request.user, announcement_id__in=ids).values_list("announcement_id", flat=True)
+        )
+        unread_announcement_count = sum(1 for item in announcements if item.id not in read_ids)
+
     return {
         "store_settings": settings,
         "nav_categories": nav_categories,
@@ -55,4 +64,6 @@ def store_context(request):
         "enamad_badge": enamad_badge,
         "zarinpal_badge": zarinpal_badge,
         "cart_count": sum(clean_cart.values()),
+        "site_announcements": announcements,
+        "unread_announcement_count": unread_announcement_count,
     }
