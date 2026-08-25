@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load store_filters wallet_tags %}
 {% block title %}مشخصات حساب | {{ store_settings.store_name }}{% endblock %}
 {% block content %}
 <section class="wrap account-center">
@@ -13,6 +14,7 @@
       <strong>{{ user.get_full_name|default:'کاربر فروشگاه' }}</strong>
       <small>{{ user.email }}</small>
       <div class="customer-code-box"><span>شماره مشتری</span><b>{{ user.customer_code|default:'-' }}</b></div>
+      <div class="customer-code-box"><span>موجودی کیف پول</span><b>{{ user|wallet_balance|money }} تومان</b></div>
       <nav>
         <a class="active" href="{% url 'account_profile' %}">👤 مشخصات حساب</a>
         <a href="{% url 'account_orders' %}">📦 سفارش‌ها</a>
@@ -23,6 +25,7 @@
     <div class="account-main-card">
       <div class="account-card-title"><h2>اطلاعات شخصی</h2><p>برای پیگیری سفارش و پشتیبانی، اطلاعات را دقیق نگه دار.</p></div>
       <div class="account-customer-code"><span>شماره مشتری اختصاصی شما</span><strong>{{ user.customer_code|default:'-' }}</strong><small>برای پشتیبانی و جستجوی سریع حساب از این شماره استفاده می‌شود.</small></div>
+      <div class="account-customer-code" style="margin-top:12px"><span>کیف پول شما</span><strong>{{ user|wallet_balance|money }} تومان</strong><small>مبالغ برگشتی و اعتبارهایی که مدیر برای حساب شما ثبت می‌کند اینجا نمایش داده می‌شود.</small></div>
       <form method="post" class="account-form">{% csrf_token %}
         <div class="account-form-grid">{% for field in form %}<label><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>{% endfor %}</div>
         <button class="btn" type="submit">ذخیره تغییرات</button>
