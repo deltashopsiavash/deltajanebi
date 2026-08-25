@@ -1,5 +1,4 @@
 import os
-from collections import defaultdict
 
 from asgiref.sync import sync_to_async
 from django.core.management.base import BaseCommand
@@ -125,7 +124,8 @@ def _change_lines(site, product, created, changes):
         old_price, new_price = changes.get("price", (product.price, product.price))
         lines.append(
             f"💰 تغییر قیمت — {title}\n"
-            f"قیمت اصلی سایت: {int(old_source):,} ← {int(new_source):,}\n"
+            f"قیمت قبلی منبع: {int(old_source):,}\n"
+            f"قیمت جدید منبع: {int(new_source):,}\n"
             f"قیمت قدیمی سایت من: {int(old_price):,}\n"
             f"قیمت جدید سایت من: {int(new_price):,}"
         )
