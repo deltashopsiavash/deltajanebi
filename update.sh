@@ -34,14 +34,14 @@ docker run --rm \
   deltajanebi-app:latest \
   manage.py makemigrations --check --dry-run
 
-echo "==> بررسی ربات v8، گزارش Sync و قالب قیمت"
+echo "==> بررسی ربات v10، پرداخت، شهرها و سبد خرید"
 docker run --rm \
   --entrypoint python \
   -e DJANGO_SECRET_KEY=update-smoke-test-only \
   -e DEBUG=0 \
   -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
   deltajanebi-app:latest \
-  manage.py shell -c 'from shop.management.commands import telegram_bot_v8 as b; from shop.management.commands import sync_loop; from shop.services.source_catalog import discover_product_urls, upsert_source_product_with_changes; from shop.templatetags.store_filters import money; assert b.main_menu().inline_keyboard; assert b.product_management_menu().inline_keyboard; assert b.admin_management_menu().inline_keyboard; assert callable(upsert_source_product_with_changes); assert money(230000)=="230,000"; print("telegram_bot_v8 + detailed sync + money filter: OK")'
+  manage.py shell -c 'from shop.management.commands import telegram_bot_v10 as b; from shop.management.commands import sync_loop; from shop.services.payments import request_zarinpal_payment, verify_zarinpal_payment; from shop.iran_locations import province_city_map; from shop.models import DiscountCode, SiteSetting; from shop.templatetags.store_filters import money; assert b.v9.settings_menu().inline_keyboard; assert callable(request_zarinpal_payment) and callable(verify_zarinpal_payment); assert len(province_city_map())>=31; assert money(230000)=="230,000"; assert DiscountCode.PERCENT=="percent"; print("telegram_bot_v10 + checkout + ZarinPal + Iran locations: OK")'
 
 echo "==> اجرای تست‌های قبل از انتشار"
 docker run --rm \
@@ -66,13 +66,13 @@ for _ in $(seq 1 60); do
     break
   fi
   if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
-    docker compose logs --tail=120 web >&2 || true
+    docker compose logs --tail=160 web bot sync >&2 || true
     exit 1
   fi
   sleep 2
 done
 
-[ "$healthy" -eq 1 ] || { docker compose logs --tail=120 web >&2 || true; exit 1; }
+[ "$healthy" -eq 1 ] || { docker compose logs --tail=160 web >&2 || true; exit 1; }
 docker compose exec -T web python manage.py check --fail-level ERROR
 
 sleep 3
@@ -81,7 +81,7 @@ for svc in db web bot sync caddy; do
   [ -n "$cid" ] || { echo "خطا: کانتینر $svc پیدا نشد." >&2; exit 1; }
   running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"
   if [ "$running" != "true" ]; then
-    docker compose logs --tail=120 "$svc" >&2 || true
+    docker compose logs --tail=160 "$svc" >&2 || true
     echo "خطا: سرویس $svc در حال اجرا نیست." >&2
     exit 1
   fi
