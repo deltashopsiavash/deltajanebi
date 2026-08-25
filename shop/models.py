@@ -38,6 +38,13 @@ class User(AbstractUser):
 
 
 class Category(models.Model):
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="children",
+    )
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, allow_unicode=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
@@ -49,6 +56,41 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name, allow_unicode=True)[:110] or "category"
+            slug = base
+            i = 2
+            while Category.objects.exclude(pk=self.pk).filter(slug=slug).exists():
+                slug = f"{base}-{i}"
+                i += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
+
+    def ancestor_chain(self):
+        chain = []
+        current = self
+        seen = set()
+        while current and current.pk not in seen:
+            seen.add(current.pk)
+            chain.append(current)
+            current = current.parent
+        return list(reversed(chain))
+
+    def descendant_ids(self):
+        ids = [self.pk]
+        frontier = [self.pk]
+        while frontier:
+            child_ids = list(
+                Category.objects.filter(parent_id__in=frontier, is_active=True).values_list("id", flat=True)
+            )
+            child_ids = [pk for pk in child_ids if pk not in ids]
+            if not child_ids:
+                break
+            ids.extend(child_ids)
+            frontier = child_ids
+        return ids
 
 
 class Product(models.Model):
@@ -66,6 +108,7 @@ class Product(models.Model):
     source_price = models.PositiveBigIntegerField(default=0, help_text="تومان")
     stock = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    image = models.ImageField(upload_to="products/%Y/%m/", blank=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     gallery = models.JSONField(default=list, blank=True)
     specs = models.JSONField(default=dict, blank=True)
@@ -95,6 +138,23 @@ class Product(models.Model):
                 i += 1
             self.slug = slug
         super().save(*args, **kwargs)
+
+    @property
+    def primary_image(self):
+        if self.image:
+            try:
+                return self.image.url
+            except ValueError:
+                pass
+        return self.image_url
+
+    def gallery_images(self):
+        images = []
+        for value in [self.primary_image, *(self.gallery or [])]:
+            value = str(value or "").strip()
+            if value and value not in images:
+                images.append(value)
+        return images[:12]
 
     def apply_markup(self, source_price=None):
         base = Decimal(source_price if source_price is not None else self.source_price)
