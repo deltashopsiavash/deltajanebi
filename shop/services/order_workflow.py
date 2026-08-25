@@ -69,6 +69,7 @@ def order_report_text(order, title="🧾 فاکتور جدید"):
         f"👤 {order.first_name} {order.last_name}\n"
         f"📞 {order.phone}\n"
         f"📍 {order.province}، {order.city}\n{order.address}\n"
+        f"📮 کد پستی: {order.postal_code or '-'}\n"
         + (f"📝 یادداشت: {order.order_note}\n" if order.order_note else "")
         + f"\n📦 محصولات:\n{order_products_text(order)}\n\n"
         + time_lines
