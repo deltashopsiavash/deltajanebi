@@ -39,6 +39,7 @@ _BIDI_CHARS = {
     "\u2066", "\u2067", "\u2068", "\u2069", "\ufeff",
 }
 _PERCENT_SIGNS = ("%", "٪", "％")
+MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
 def admins():
@@ -108,7 +109,11 @@ def menu():
 
 
 def category_tree_text():
-    categories = list(Category.objects.filter(is_active=True).select_related("parent").order_by("parent_id", "order", "name"))
+    categories = list(
+        Category.objects.filter(is_active=True)
+        .select_related("parent")
+        .order_by("parent_id", "order", "name")
+    )
     if not categories:
         return "هنوز دسته‌بندی‌ای ساخته نشده."
     children = {}
@@ -125,9 +130,42 @@ def category_tree_text():
     return "📂 دسته‌بندی‌های سایت:\n\n" + "\n".join(lines[:80])
 
 
+async def _telegram_image_bytes(update, prefix):
+    """Return (bytes, filename) for a Telegram photo/document image, else (None, None)."""
+    message = update.effective_message
+    if message.photo:
+        photo = message.photo[-1]
+        tg_file = await photo.get_file()
+        raw = bytes(await tg_file.download_as_bytearray())
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise ValueError("حجم عکس بیشتر از ۱۵ مگابایت است.")
+        return raw, f"{prefix}-{uuid.uuid4().hex}.jpg"
+
+    if message.document:
+        document = message.document
+        if not (document.mime_type or "").startswith("image/"):
+            raise ValueError("این فایل تصویر نیست.")
+        if document.file_size and document.file_size > MAX_IMAGE_BYTES:
+            raise ValueError("حجم عکس بیشتر از ۱۵ مگابایت است.")
+        tg_file = await document.get_file()
+        raw = bytes(await tg_file.download_as_bytearray())
+        ext = {
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/gif": ".gif",
+        }.get(document.mime_type, ".jpg")
+        return raw, f"{prefix}-{uuid.uuid4().hex}{ext}"
+
+    return None, None
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if allowed(update):
-        await update.effective_message.reply_text("مدیریت دلتا جانبی", reply_markup=menu())
+    if not allowed(update):
+        return ConversationHandler.END
+    # /start is a real reset: stale product/logo steps must never block menu callbacks.
+    context.user_data.clear()
+    await update.effective_message.reply_text("مدیریت دلتا جانبی", reply_markup=menu())
+    return ConversationHandler.END
 
 
 async def on_menu(update, context):
@@ -136,17 +174,31 @@ async def on_menu(update, context):
     q = update.callback_query
     await q.answer()
 
+    # Re-entering from another menu button intentionally abandons the old wizard data.
+    if q.data != "special":
+        context.user_data.pop("special", None)
+    if q.data != "manual":
+        context.user_data.pop("manual", None)
+
     if q.data == "special":
+        context.user_data.pop("special", None)
         await q.message.reply_text("لینک محصول سایت منبع را بفرست:")
         return SPECIAL_URL
     if q.data == "manual":
+        context.user_data.pop("manual", None)
         await q.message.reply_text("نام محصول عادی را بفرست:")
         return MANUAL_NAME
     if q.data == "shipping":
         await q.message.reply_text("هزینه ارسال جدید به تومان:")
         return SET_SHIPPING
     if q.data == "logo":
-        await q.message.reply_text("لینک مستقیم لوگوی سایت را بفرست:")
+        await q.message.reply_text(
+            "لوگوی سایت را بفرست:\n"
+            "• عکس مستقیم تلگرام\n"
+            "• فایل تصویر JPG/PNG/WebP\n"
+            "• لینک مستقیم http/https\n"
+            "برای حذف لوگو، - بفرست."
+        )
         return SET_LOGO
     if q.data == "categories":
         text = await sync_to_async(category_tree_text)()
@@ -163,8 +215,12 @@ async def on_menu(update, context):
         rows = await sync_to_async(list)(Product.objects.filter(source_type=Product.SYNCED, is_active=True))
         for product in rows:
             await sync_to_async(sync_product)(product)
-        await q.message.reply_text(f"✅ {len(rows)} محصول همگام شد؛ دسته‌بندی، قیمت، موجودی و اطلاعات هم بررسی شدند.", reply_markup=menu())
+        await q.message.reply_text(
+            f"✅ {len(rows)} محصول همگام شد؛ دسته‌بندی، قیمت، موجودی و اطلاعات هم بررسی شدند.",
+            reply_markup=menu(),
+        )
         return ConversationHandler.END
+    return ConversationHandler.END
 
 
 async def special_url(update, context):
@@ -201,7 +257,10 @@ async def special_markup(update, context):
 
     info = context.user_data.get("special")
     if not info:
-        await update.message.reply_text("اطلاعات محصول منقضی شده. دوباره «افزودن محصول خاص» را بزن.", reply_markup=menu())
+        await update.message.reply_text(
+            "اطلاعات محصول منقضی شده. دوباره «افزودن محصول خاص» را بزن.",
+            reply_markup=menu(),
+        )
         return ConversationHandler.END
     data = info["data"]
 
@@ -289,38 +348,30 @@ async def manual_category(update, context):
 async def manual_image(update, context):
     data = context.user_data.get("manual")
     if not data:
-        await update.effective_message.reply_text("اطلاعات محصول منقضی شده؛ دوباره افزودن محصول عادی را بزن.", reply_markup=menu())
+        await update.effective_message.reply_text(
+            "اطلاعات محصول منقضی شده؛ دوباره افزودن محصول عادی را بزن.",
+            reply_markup=menu(),
+        )
         return ConversationHandler.END
 
     image_bytes = None
     image_filename = None
     image_url = ""
 
-    if update.message.photo:
-        photo = update.message.photo[-1]
-        tg_file = await photo.get_file()
-        image_bytes = bytes(await tg_file.download_as_bytearray())
-        image_filename = f"telegram-{uuid.uuid4().hex}.jpg"
-    elif update.message.document:
-        document = update.message.document
-        if not (document.mime_type or "").startswith("image/"):
-            await update.message.reply_text("این فایل تصویر نیست. عکس بفرست یا /cancel بزن.")
-            return MANUAL_IMAGE
-        if document.file_size and document.file_size > 15 * 1024 * 1024:
-            await update.message.reply_text("حجم عکس بیشتر از ۱۵ مگابایت است؛ تصویر کوچک‌تر بفرست.")
-            return MANUAL_IMAGE
-        tg_file = await document.get_file()
-        image_bytes = bytes(await tg_file.download_as_bytearray())
-        ext = {"image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(document.mime_type, ".jpg")
-        image_filename = f"telegram-{uuid.uuid4().hex}{ext}"
-    elif update.message.text:
+    try:
+        image_bytes, image_filename = await _telegram_image_bytes(update, "product")
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"❌ {exc}")
+        return MANUAL_IMAGE
+
+    if not image_bytes and update.message.text:
         text = update.message.text.strip()
         if text != "-":
             if not re.match(r"^https?://", text, re.I):
                 await update.message.reply_text("لینک عکس معتبر نیست؛ عکس مستقیم بفرست، لینک http/https بفرست یا - بزن.")
                 return MANUAL_IMAGE
             image_url = text
-    else:
+    elif not image_bytes and not update.message.text:
         await update.message.reply_text("عکس، فایل تصویر، لینک عکس یا - بفرست.")
         return MANUAL_IMAGE
 
@@ -376,16 +427,70 @@ async def set_shipping(update, context):
 
 
 async def set_logo(update, context):
-    settings = await sync_to_async(SiteSetting.load)()
-    settings.logo_url = update.message.text.strip()
-    await sync_to_async(settings.save)(update_fields=["logo_url"])
-    await update.message.reply_text("✅ لوگو تغییر کرد.", reply_markup=menu())
+    try:
+        image_bytes, image_filename = await _telegram_image_bytes(update, "logo")
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"❌ {exc}")
+        return SET_LOGO
+
+    text = update.message.text.strip() if update.message.text else ""
+    if not image_bytes and not text:
+        await update.effective_message.reply_text("عکس، فایل تصویر، لینک لوگو یا - بفرست.")
+        return SET_LOGO
+
+    if text and text != "-" and not re.match(r"^https?://", text, re.I):
+        await update.effective_message.reply_text("لینک معتبر نیست. عکس مستقیم بفرست یا لینک http/https بفرست.")
+        return SET_LOGO
+
+    def save_logo():
+        settings = SiteSetting.load()
+        if image_bytes and image_filename:
+            if settings.logo:
+                try:
+                    settings.logo.delete(save=False)
+                except Exception:
+                    pass
+            settings.logo.save(image_filename, ContentFile(image_bytes), save=False)
+            settings.logo_url = ""
+            settings.save(update_fields=["logo", "logo_url"])
+            return settings.logo_src
+
+        if text == "-":
+            if settings.logo:
+                try:
+                    settings.logo.delete(save=False)
+                except Exception:
+                    pass
+            settings.logo = ""
+            settings.logo_url = ""
+            settings.save(update_fields=["logo", "logo_url"])
+            return ""
+
+        if settings.logo:
+            try:
+                settings.logo.delete(save=False)
+            except Exception:
+                pass
+        settings.logo = ""
+        settings.logo_url = text
+        settings.save(update_fields=["logo", "logo_url"])
+        return settings.logo_src
+
+    try:
+        logo_src = await sync_to_async(save_logo)()
+    except Exception as exc:
+        await update.effective_message.reply_text(f"❌ خطا در ذخیره لوگو: {exc}")
+        return SET_LOGO
+
+    if logo_src:
+        await update.effective_message.reply_text("✅ لوگوی سایت تغییر کرد.", reply_markup=menu())
+    else:
+        await update.effective_message.reply_text("✅ لوگوی سفارشی حذف شد.", reply_markup=menu())
     return ConversationHandler.END
 
 
 async def cancel(update, context):
-    context.user_data.pop("special", None)
-    context.user_data.pop("manual", None)
+    context.user_data.clear()
     await update.effective_message.reply_text("لغو شد.", reply_markup=menu())
     return ConversationHandler.END
 
@@ -435,10 +540,11 @@ class Command(BaseCommand):
         app = Application.builder().token(token).build()
         conv = ConversationHandler(
             entry_points=[
+                CommandHandler("start", start),
                 CallbackQueryHandler(
                     on_menu,
                     pattern="^(special|manual|orders|syncnow|categories|shipping|logo)$",
-                )
+                ),
             ],
             states={
                 SPECIAL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, special_url)],
@@ -453,11 +559,18 @@ class Command(BaseCommand):
                     MessageHandler(filters.TEXT & ~filters.COMMAND, manual_image),
                 ],
                 SET_SHIPPING: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_shipping)],
-                SET_LOGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_logo)],
+                SET_LOGO: [
+                    MessageHandler(filters.PHOTO, set_logo),
+                    MessageHandler(filters.Document.IMAGE, set_logo),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, set_logo),
+                ],
             },
-            fallbacks=[CommandHandler("cancel", cancel)],
+            fallbacks=[
+                CommandHandler("start", start),
+                CommandHandler("cancel", cancel),
+            ],
+            allow_reentry=True,
         )
-        app.add_handler(CommandHandler("start", start))
         app.add_handler(conv)
         app.add_handler(MessageHandler(filters.Regex(r"^/order_\d+$"), order_cmd))
         app.add_handler(CallbackQueryHandler(status_cb, pattern=r"^st:\d+:(preparing|shipped|cancelled)$"))
