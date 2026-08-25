@@ -69,6 +69,20 @@ async def on_callback(update: Update, context):
         await q.message.reply_text(f"✅ رسید سفارش #{order.id} تایید شد و سفارش وارد آماده‌سازی شد.")
         return
 
+    if data.startswith("receipt:reject:"):
+        await q.answer()
+        oid = int(data.rsplit(":", 1)[1])
+        order = await sync_to_async(Order.objects.only("id", "payment_status", "status").get)(pk=oid)
+        if order.payment_status == Order.PAY_PAID or order.status in ("preparing", "shipped", "delivered"):
+            await q.message.reply_text("این پرداخت قبلاً تایید شده و دیگر قابل رد کردن نیست.")
+            return
+        if order.payment_status in (Order.PAY_REJECTED, Order.PAY_FAILED) or order.status in ("payment_rejected", "cancelled"):
+            await q.message.reply_text("این پرداخت قبلاً رد/بسته شده است.")
+            return
+        old.set_state(context, "receipt_reject_reason", order_id=oid)
+        await q.message.reply_text(f"دلیل رد رسید سفارش #{oid} را بنویس:")
+        return
+
     v9._show_commerce = show_commerce
     await v9.on_callback(update, context)
 
