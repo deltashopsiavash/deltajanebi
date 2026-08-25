@@ -32,9 +32,20 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True)
+    customer_code = models.CharField(max_length=20, unique=True, blank=True, null=True, db_index=True)
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
     objects = UserManager()
+
+    def save(self, *args, **kwargs):
+        if self.email:
+            self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
+        if self.pk and not self.customer_code:
+            code = f"CU-{self.pk:07d}"
+            User.objects.filter(pk=self.pk, customer_code__isnull=True).update(customer_code=code)
+            User.objects.filter(pk=self.pk, customer_code="").update(customer_code=code)
+            self.customer_code = code
 
 
 class Category(models.Model):
@@ -97,6 +108,7 @@ class Product(models.Model):
     price = models.PositiveBigIntegerField(default=0, help_text="قیمت پایه فروش به تومان")
     source_price = models.PositiveBigIntegerField(default=0, help_text="تومان")
     stock = models.PositiveIntegerField(default=0)
+    reserved_stock = models.PositiveIntegerField(default=0, help_text="تعداد رزرو موقت سفارش‌های پرداخت‌نشده")
     is_active = models.BooleanField(default=True)
     image = models.ImageField(upload_to="products/%Y/%m/", blank=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
@@ -137,6 +149,10 @@ class Product(models.Model):
                 kwargs["update_fields"] = list(set(update_fields) | {"manual_stock_override"})
             else:
                 self.stock = self.manual_stock_override
+        if self.reserved_stock > self.stock:
+            self.reserved_stock = self.stock
+            if update_fields:
+                kwargs["update_fields"] = list(set(kwargs["update_fields"]) | {"reserved_stock"})
         if not self.slug:
             base = slugify(self.name, allow_unicode=True)[:280] or "product"
             slug = base
@@ -159,6 +175,10 @@ class Product(models.Model):
                     Category.objects.filter(pk=current.pk, image_url="").update(image_url=image)
                     current.image_url = image
                 current = current.parent
+
+    @property
+    def available_stock(self):
+        return max(0, int(self.stock or 0) - int(self.reserved_stock or 0))
 
     @property
     def primary_image(self):
@@ -221,6 +241,7 @@ class SiteSetting(models.Model):
     logo = models.ImageField(upload_to="site/logo/", blank=True)
     logo_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     home_banner_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    top_bar_text = models.CharField(max_length=240, default="خرید آنلاین • قیمت و موجودی به‌روز • ارسال مطمئن")
     shipping_cost = models.PositiveBigIntegerField(default=0)
     packaging_cost = models.PositiveBigIntegerField(default=0)
     free_shipping_threshold = models.PositiveBigIntegerField(default=0, help_text="صفر یعنی غیرفعال")
@@ -455,6 +476,9 @@ class Order(models.Model):
     zarinpal_ref_id = models.CharField(max_length=80, blank=True)
     zarinpal_card_pan = models.CharField(max_length=40, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    reservation_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    stock_committed = models.BooleanField(default=False)
+    reservation_released = models.BooleanField(default=False)
     tracking_code = models.CharField(max_length=100, blank=True)
     admin_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -466,6 +490,22 @@ class Order(models.Model):
     @property
     def payment_label(self):
         return self.get_payment_method_display()
+
+    @property
+    def reservation_active(self):
+        return bool(
+            self.reservation_expires_at
+            and timezone.now() < self.reservation_expires_at
+            and not self.stock_committed
+            and not self.reservation_released
+            and self.status not in ("cancelled", "payment_rejected")
+        )
+
+    @property
+    def reservation_remaining_seconds(self):
+        if not self.reservation_active:
+            return 0
+        return max(0, int((self.reservation_expires_at - timezone.now()).total_seconds()))
 
     @property
     def card_last4(self):
@@ -483,3 +523,26 @@ class OrderItem(models.Model):
     @property
     def total(self):
         return self.price * self.quantity
+
+
+class Announcement(models.Model):
+    text = models.TextField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.text[:60]
+
+
+class AnnouncementRead(models.Model):
+    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name="reads")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="announcement_reads")
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["announcement", "user"], name="unique_announcement_read"),
+        ]
