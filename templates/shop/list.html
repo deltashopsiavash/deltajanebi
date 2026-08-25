@@ -1,1 +1,14 @@
-{% extends 'base.html' %}{% block title %}{{ title }}{% endblock %}{% block content %}<section class="wrap page"><div class="section-head"><h1>{{ title }}</h1></div>{% include 'shop/_grid.html' %}</section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<section class="wrap page">
+  {% if breadcrumbs %}<nav class="pd-breadcrumb"><a href="/">صفحه اصلی</a>{% for c in breadcrumbs %}<span>›</span><a href="{% url 'category' c.slug %}">{{ c.name }}</a>{% endfor %}</nav>{% endif %}
+  <div class="section-head"><h1>{{ title }}</h1></div>
+  {% if child_categories %}
+    <div class="cats">
+      {% for c in child_categories %}<a href="{% url 'category' c.slug %}">{% if c.image_url %}<img src="{{ c.image_url }}" alt="">{% endif %}<span>{{ c.name }}</span></a>{% endfor %}
+    </div>
+  {% endif %}
+  {% include 'shop/_grid.html' %}
+</section>
+{% endblock %}
