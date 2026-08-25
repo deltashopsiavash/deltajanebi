@@ -1,3 +1,4 @@
+import html
 import ipaddress
 import json
 import os
@@ -19,6 +20,14 @@ class SourceSyncError(Exception):
     pass
 
 
+class SourceNotProductError(SourceSyncError):
+    """A discovered URL is not actually a product page and should be skipped."""
+
+
+class SourcePriceUnavailableError(SourceSyncError):
+    """A real product page currently exposes no usable price."""
+
+
 def _source_brand_terms():
     raw = os.getenv("SOURCE_BRAND_TERMS", "همراه دوم,hamrahedovom")
     return [x.strip().lower() for x in raw.split(",") if x.strip()]
@@ -37,7 +46,6 @@ def _clean_source_name(value):
     text = _clean_spaces(value)
     if not text:
         return ""
-    # Source stores often append a marketing suffix after the actual product title.
     for term in _source_brand_terms():
         text = re.sub(rf"\s*[-|–—]\s*[^\n]*{re.escape(term)}[^\n]*$", "", text, flags=re.I)
         text = re.sub(re.escape(term), "", text, flags=re.I)
@@ -49,7 +57,6 @@ def _clean_source_description(value):
     text = str(value or "").strip()
     if not text:
         return ""
-    # Remove source-store promotional sentences/clauses, keep actual product copy.
     parts = re.split(r"(?<=[.!؟\n])\s+|\s+[|–—]\s+", text)
     kept = [part.strip() for part in parts if part.strip() and not _contains_source_brand(part)]
     cleaned = " ".join(kept)
@@ -127,6 +134,137 @@ def _jsonld_products(soup):
     return out
 
 
+def _offer_dicts(value):
+    if isinstance(value, dict):
+        yield value
+        nested = value.get("offers")
+        if nested is not None:
+            yield from _offer_dicts(nested)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _offer_dicts(item)
+
+
+def _normalize_price(value, currency="", text_hint=""):
+    price = _digits(value)
+    if not price:
+        return 0
+    curr = str(currency or "").upper().strip()
+    hint = str(text_hint or "")
+    if curr == "IRR" or (not curr and "ریال" in hint and "تومان" not in hint):
+        price //= 10
+    return max(0, price)
+
+
+def _variation_prices(soup):
+    prices = []
+    for form in soup.select("form.variations_form[data-product_variations], [data-product_variations]")[:10]:
+        raw = form.get("data-product_variations")
+        if not raw or raw in {"false", "[]"}:
+            continue
+        try:
+            rows = json.loads(html.unescape(raw))
+        except Exception:
+            continue
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("variation_is_visible") is False:
+                continue
+            for key in ("display_price", "display_regular_price"):
+                value = _digits(row.get(key))
+                if value:
+                    prices.append(value)
+                    break
+    return prices
+
+
+def _extract_product_price(soup, ld, meta):
+    """Return (price_toman, currency/source label). Most reliable candidates win."""
+    candidates = []
+
+    def add(value, currency="", hint="", source=""):
+        price = _normalize_price(value, currency, hint)
+        if price:
+            candidates.append((price, source or "html"))
+
+    offers_value = ld.get("offers") if isinstance(ld, dict) else None
+    for offer in _offer_dicts(offers_value):
+        currency = offer.get("priceCurrency") or ""
+        # Sale/current price first, then aggregate range. lowPrice is preferred for variable products.
+        add(offer.get("price"), currency, source="jsonld.price")
+        add(offer.get("lowPrice"), currency, source="jsonld.lowPrice")
+        if not offer.get("lowPrice"):
+            add(offer.get("highPrice"), currency, source="jsonld.highPrice")
+        spec = offer.get("priceSpecification")
+        specs = spec if isinstance(spec, list) else [spec]
+        for row in specs:
+            if isinstance(row, dict):
+                add(row.get("price"), row.get("priceCurrency") or currency, source="jsonld.priceSpecification")
+
+    meta_currency = meta("product:price:currency", "og:price:currency")
+    add(meta("product:price:amount", "og:price:amount"), meta_currency, source="meta.price")
+
+    for node in soup.select("[itemprop='price'][content]")[:5]:
+        add(node.get("content"), node.get("data-currency") or meta_currency, node.parent.get_text(" ", strip=True) if node.parent else "", "itemprop.price")
+
+    # WooCommerce puts the live sale price in <ins>; check it before regular/range prices.
+    selectors = [
+        ".summary .price ins .woocommerce-Price-amount",
+        ".summary .price ins bdi",
+        ".summary p.price ins",
+        ".summary .price .woocommerce-Price-amount",
+        ".summary p.price",
+        ".product .price ins .woocommerce-Price-amount",
+        ".product .price .woocommerce-Price-amount",
+        ".woocommerce-variation-price .price .woocommerce-Price-amount",
+        ".woocommerce-variation-price .price",
+        "[class*='product-price'] [class*='amount']",
+        "[class*='product-price']",
+    ]
+    for selector in selectors:
+        nodes = soup.select(selector)
+        for node in nodes[:8]:
+            text = node.get_text(" ", strip=True)
+            add(node.get("content") or text, "", text, f"selector:{selector}")
+        if candidates:
+            break
+
+    variation = _variation_prices(soup)
+    if variation:
+        candidates.append((min(variation), "woocommerce.variation"))
+
+    # Last-resort WooCommerce inline JS. Keep this narrow to avoid mistaking IDs for prices.
+    if not candidates:
+        raw_html = str(soup)
+        for pattern in (
+            r'["\']display_price["\']\s*:\s*["\']?([0-9]+(?:\.[0-9]+)?)',
+            r'["\']display_regular_price["\']\s*:\s*["\']?([0-9]+(?:\.[0-9]+)?)',
+        ):
+            values = [_digits(x) for x in re.findall(pattern, raw_html, flags=re.I)]
+            values = [x for x in values if x > 0]
+            if values:
+                candidates.append((min(values), "woocommerce.inline"))
+                break
+
+    return candidates[0] if candidates else (0, "")
+
+
+def _looks_like_product_page(soup, ld):
+    if ld:
+        return True
+    body = soup.body
+    body_classes = " ".join(body.get("class") or []) if body else ""
+    if "single-product" in body_classes.lower():
+        return True
+    return bool(soup.select_one(
+        "h1.product_title, .product_title, form.cart, .woocommerce-product-gallery, "
+        ".product_meta, [data-product_id], [itemtype*='schema.org/Product']"
+    ))
+
+
 def _extract_category_names(soup):
     names = []
 
@@ -139,7 +277,6 @@ def _extract_category_names(soup):
         if name not in names:
             names.append(name[:120])
 
-    # Prefer structured breadcrumbs because they are stable and ordered.
     for item in _jsonld_objects(soup):
         kind = item.get("@type", "")
         kinds = kind if isinstance(kind, list) else [kind]
@@ -261,7 +398,6 @@ def _extract_gallery(soup, base_url, structured_image):
             candidate = _gallery_candidate(img, base_url)
             if candidate:
                 add(candidate, img)
-        # Once a real gallery selector matched, don't scan broad fallbacks.
         if len(gallery) > 1 or found:
             break
 
@@ -306,9 +442,13 @@ def scrape_product(url):
     headers = {
         "User-Agent": os.getenv("SOURCE_USER_AGENT", "DeltaJanebiSync/1.0"),
         "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.5",
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
     }
     timeout = float(os.getenv("SOURCE_REQUEST_TIMEOUT", "20"))
-    r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+    try:
+        r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+    except requests.RequestException as exc:
+        raise SourceSyncError(f"ارتباط با سایت منبع برقرار نشد: {exc}") from exc
     if r.status_code >= 400:
         raise SourceSyncError(f"خطای منبع: HTTP {r.status_code}")
     if not _allowed_url(r.url):
@@ -316,8 +456,7 @@ def scrape_product(url):
 
     soup = BeautifulSoup(r.text, "lxml")
     ld = (_jsonld_products(soup) or [{}])[0]
-    offers = ld.get("offers") or {}
-    offers = offers[0] if isinstance(offers, list) and offers else offers
+    product_page = _looks_like_product_page(soup, ld if ld else None)
 
     def meta(*keys):
         for key in keys:
@@ -330,9 +469,11 @@ def scrape_product(url):
                 return tag["content"].strip()
         return ""
 
+    title_node = soup.select_one("h1.product_title, h1.entry-title, h1[itemprop='name'], .product_title")
     raw_name = _first(
         ld.get("name"),
         meta("og:title", "twitter:title"),
+        title_node.get_text(" ", strip=True) if title_node else "",
         soup.title.string.strip() if soup.title and soup.title.string else "",
     )
     name = _clean_source_name(raw_name)
@@ -342,25 +483,26 @@ def scrape_product(url):
     gallery = _extract_gallery(soup, r.url, structured_image)
     image = gallery[0] if gallery else ""
 
-    price = _digits(
-        _first(
-            offers.get("price") if isinstance(offers, dict) else "",
-            meta("product:price:amount", "og:price:amount"),
-        )
-    )
-    currency = str(
-        _first(
-            offers.get("priceCurrency") if isinstance(offers, dict) else "",
-            meta("product:price:currency"),
-        )
-    ).upper()
-    if currency == "IRR" and price:
-        price //= 10
+    price, price_source = _extract_product_price(soup, ld, meta)
 
-    availability = str(
-        _first(offers.get("availability") if isinstance(offers, dict) else "", "")
-    ).lower()
+    offers = ld.get("offers") or {}
+    offer_rows = list(_offer_dicts(offers))
+    availability = " ".join(str(row.get("availability") or "") for row in offer_rows).lower()
     text = soup.get_text(" ", strip=True)
+    unavailable = bool(
+        "outofstock" in availability
+        or "soldout" in availability
+        or re.search(r"ناموجود|اتمام موجودی|در انبار موجود نمی باشد|در انبار موجود نیست", text, re.I)
+        or soup.select_one(".out-of-stock, .stock.out-of-stock")
+    )
+
+    if not product_page and (not name or not price):
+        raise SourceNotProductError("لینک کشف‌شده صفحه محصول نیست و از همگام‌سازی رد شد.")
+    if not name:
+        raise SourceSyncError("نام محصول از صفحه قابل استخراج نبود.")
+    if not price and not unavailable:
+        raise SourcePriceUnavailableError("قیمت محصول از صفحه قابل استخراج نبود؛ ساختار قیمت این محصول متفاوت است.")
+
     stock = 0
     for node in [
         soup.select_one("[data-stock]"),
@@ -380,9 +522,9 @@ def scrape_product(url):
             if match:
                 stock = _digits(match.group(1))
                 break
-    if not stock and ("instock" in availability or re.search(r"\bموجود\b", text)) and not re.search(
-        r"ناموجود|اتمام موجودی", text
-    ):
+    if unavailable:
+        stock = 0
+    elif not stock and ("instock" in availability or re.search(r"\bموجود\b", text)):
         stock = 1
 
     specs = {}
@@ -401,18 +543,21 @@ def scrape_product(url):
 
     sku = str(_first(ld.get("sku"), ld.get("mpn"), ""))
     if not sku:
+        sku_node = soup.select_one(".sku, [itemprop='sku']")
+        if sku_node:
+            sku = sku_node.get("content") or sku_node.get_text(" ", strip=True)
+    if not sku:
         match = re.search(r"/(BKP-\d+)/", r.url, re.I)
         sku = match.group(1).upper() if match else ""
 
     categories = _extract_category_names(soup)
 
-    if not name or not price:
-        raise SourceSyncError("نام یا قیمت محصول از صفحه قابل استخراج نبود؛ پارسر سایت منبع باید تنظیم شود.")
-
     return {
         "name": name[:300],
         "description": desc[:10000],
         "price": price,
+        "price_missing": not bool(price),
+        "price_source": price_source,
         "stock": max(0, stock),
         "image_url": image,
         "gallery": gallery,
@@ -428,8 +573,9 @@ def sync_product(product, raise_errors=False):
         data = scrape_product(product.source_url)
         product.name = data["name"] or product.name
         product.description = data["description"] or product.description
-        product.source_price = data["price"]
-        product.price = product.apply_markup(data["price"])
+        if data["price"]:
+            product.source_price = data["price"]
+            product.price = product.apply_markup(data["price"])
         product.stock = data["stock"]
         product.image_url = data["image_url"] or product.image_url
         product.gallery = data["gallery"] or ([product.image_url] if product.image_url else [])
@@ -442,6 +588,13 @@ def sync_product(product, raise_errors=False):
         product.last_synced_at = timezone.now()
         product.sync_error = ""
         product.save()
+        return product
+    except SourceNotProductError as exc:
+        product.sync_error = str(exc)[:2000]
+        product.last_synced_at = timezone.now()
+        product.save(update_fields=["sync_error", "last_synced_at"])
+        if raise_errors:
+            raise
         return product
     except Exception as exc:
         product.sync_error = str(exc)[:2000]
