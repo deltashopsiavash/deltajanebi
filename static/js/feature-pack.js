@@ -24,7 +24,13 @@
     const sheet=document.getElementById('notification-backdrop');
     const head=document.querySelector('.mobile-head');
     if(!cfg||!sheet||!head)return;
-    const count=Math.max(0,parseInt(cfg.dataset.unread||'0',10)||0);
+    const isAuth=cfg.dataset.auth==='1';
+    const latest=Math.max(0,parseInt(cfg.dataset.latestAnnouncement||'0',10)||0);
+    let count=Math.max(0,parseInt(cfg.dataset.unread||'0',10)||0);
+    if(!isAuth){
+      const seen=Math.max(0,parseInt(localStorage.getItem('delta_guest_announcement_seen')||'0',10)||0);
+      if(latest<=seen)count=0;
+    }
     const phone=head.querySelector('.mobile-phone');
     const btn=document.createElement('button');
     btn.type='button';
@@ -37,7 +43,11 @@
     const open=async()=>{
       sheet.classList.add('open');sheet.setAttribute('aria-hidden','false');document.body.classList.add('modal-open');
       if(!badge.classList.contains('is-zero')){
-        try{await fetch('/notifications/read/',{method:'POST',headers:{'X-CSRFToken':csrf(),'X-Requested-With':'XMLHttpRequest'}})}catch(_){ }
+        if(isAuth){
+          try{await fetch('/notifications/read/',{method:'POST',headers:{'X-CSRFToken':csrf(),'X-Requested-With':'XMLHttpRequest'}})}catch(_){ }
+        }else if(latest){
+          try{localStorage.setItem('delta_guest_announcement_seen',String(latest))}catch(_){ }
+        }
         badge.textContent='0';badge.classList.add('is-zero');btn.classList.remove('has-unread');
       }
     };
