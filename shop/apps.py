@@ -8,7 +8,13 @@ class ShopConfig(AppConfig):
     def ready(self):
         from shop.services import source_sync
         from shop.services.source_sanitizer import sanitize_scraped_product
-        from shop.source_registry import allowed_url, generic_category_names, source_brand_terms, stable_sync_product
+        from shop.source_registry import (
+            allowed_url,
+            generic_category_names,
+            source_brand_terms,
+            source_context,
+            stable_sync_product,
+        )
 
         source_sync._allowed_url = allowed_url
         source_sync._source_brand_terms = source_brand_terms
@@ -18,7 +24,8 @@ class ShopConfig(AppConfig):
             original_scrape = source_sync.scrape_product
 
             def sanitized_scrape(url):
-                data = original_scrape(url)
+                with source_context(url):
+                    data = original_scrape(url)
                 return sanitize_scraped_product(data, data.get("source_url") or url)
 
             sanitized_scrape._delta_sanitized = True
