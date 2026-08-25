@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Category, Order, OrderItem, Product, SiteSetting, User
+from .models import Banner, Category, Order, OrderItem, Product, SiteSetting, SocialLink, User
 
 
 @admin.register(User)
@@ -31,10 +31,22 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "price", "stock", "source_type", "last_synced_at", "is_active")
+    list_display = ("public_code", "name", "category", "price", "stock", "source_type", "last_synced_at", "is_active")
     list_filter = ("source_type", "is_active", "category")
-    search_fields = ("name", "sku", "source_url")
-    readonly_fields = ("last_synced_at", "sync_error")
+    search_fields = ("public_code", "name", "sku", "source_url")
+    readonly_fields = ("public_code", "last_synced_at", "sync_error")
+
+
+@admin.register(SocialLink)
+class SocialLinkAdmin(admin.ModelAdmin):
+    list_display = ("label", "platform", "url", "is_active", "order")
+    list_filter = ("platform", "is_active")
+
+
+@admin.register(Banner)
+class BannerAdmin(admin.ModelAdmin):
+    list_display = ("title", "is_active", "order", "created_at")
+    list_filter = ("is_active",)
 
 
 admin.site.register(SiteSetting)
