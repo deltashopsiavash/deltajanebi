@@ -67,7 +67,6 @@ def allowed_url(url):
     original_hostname = parsed.hostname.lower().strip(".")
     hostname = canonical_hostname(original_hostname)
     allowed = {canonical_hostname(x) for x in SourceSite.objects.filter(is_active=True).values_list("hostname", flat=True)}
-    allowed.update(canonical_hostname(x) for x in os.getenv("SOURCE_ALLOWED_HOSTS", "").split(",") if x.strip())
     if hostname not in allowed:
         return False
     try:
@@ -137,7 +136,7 @@ def generic_category_names(soup):
                     href = nested if isinstance(nested, str) else ""
                 href_lower = str(href).lower()
                 is_last = index == len(entries) - 1
-                if is_last and href_lower and any(token in href_lower for token in ("/product/", "/products/", "/p/")) and "category" not in href_lower:
+                if is_last and not any(token in href_lower for token in ("category", "/cat/", "/collection/")):
                     continue
                 add(name)
 
@@ -158,7 +157,7 @@ def generic_category_names(soup):
         for anchor in anchors:
             href = str(anchor.get("href") or "").lower()
             text = anchor.get_text(" ", strip=True)
-            if any(token in href for token in ("/product/", "/products/", "/p/")) and "category" not in href:
+            if any(token in href for token in ("/product/", "/products/", "/p/")) and not any(token in href for token in ("category", "/cat/", "/collection/")):
                 continue
             add(text)
         if names:
