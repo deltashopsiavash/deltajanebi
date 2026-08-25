@@ -34,6 +34,10 @@ EXCLUDED_PATH_TOKENS = (
 )
 
 
+class CatalogSkip(Exception):
+    """Expected catalog item that should be skipped without reporting a sync failure."""
+
+
 def _same_source(url, site):
     parsed = urlparse(str(url or ""))
     return bool(parsed.hostname and canonical_hostname(parsed.hostname) == canonical_hostname(site.hostname))
@@ -46,7 +50,7 @@ def _safe_get(url, site, accept="text/html,application/xhtml+xml,application/xml
         response = requests.get(
             url,
             headers={
-                "User-Agent": "DeltaJanebiCatalogSync/2.0",
+                "User-Agent": "DeltaJanebiCatalogSync/2.1",
                 "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.5",
                 "Accept": accept,
             },
@@ -228,6 +232,12 @@ def upsert_source_product(site, url):
     product = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
     created = product is None
 
+    # Some stores hide price when an item becomes unavailable. Keep the last known price
+    # for an existing product; a brand-new item with no price is skipped until a real price appears.
+    incoming_price = int(data.get("price") or 0)
+    if created and not incoming_price:
+        raise CatalogSkip("محصول جدید فعلاً ناموجود و بدون قیمت قابل استخراج است؛ تا نمایش قیمت از ورود خودکار رد شد.")
+
     category = sync_category_path(data.get("categories") or []) if created else None
     sku = str(data.get("sku") or "").strip() or None
     if sku and Product.objects.exclude(pk=product.pk if product else None).filter(sku=sku).exists():
@@ -241,7 +251,7 @@ def upsert_source_product(site, url):
             source_type=Product.SYNCED,
             source_url=canonical_url,
             source_product_code=str(data.get("sku") or "")[:100],
-            source_price=data["price"],
+            source_price=incoming_price,
             stock=data.get("stock", 0),
             image_url=data.get("image_url", ""),
             gallery=data.get("gallery") or [],
@@ -255,7 +265,8 @@ def upsert_source_product(site, url):
         product.description = data.get("description") or product.description
         product.source_url = canonical_url
         product.source_product_code = str(data.get("sku") or product.source_product_code or "")[:100]
-        product.source_price = data["price"]
+        if incoming_price:
+            product.source_price = incoming_price
         product.stock = data.get("stock", 0)
         product.image_url = data.get("image_url") or product.image_url
         product.gallery = data.get("gallery") or product.gallery
@@ -265,7 +276,9 @@ def upsert_source_product(site, url):
         product.markup_type = site.default_markup_type
         product.markup_value = site.default_markup_value
 
-    product.price = _markup_price(data["price"], site.default_markup_type, site.default_markup_value)
+    effective_source_price = incoming_price or int(product.source_price or 0)
+    if effective_source_price:
+        product.price = _markup_price(effective_source_price, site.default_markup_type, site.default_markup_value)
     product.last_synced_at = timezone.now()
     product.sync_error = ""
     product.save()
@@ -278,7 +291,6 @@ def upsert_source_product_with_changes(site, url):
     existing = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
     before = _snapshot(existing)
 
-    # Avoid a second request by temporarily using the already scraped payload.
     original = source_sync.scrape_product
     source_sync.scrape_product = lambda _url: data
     try:
