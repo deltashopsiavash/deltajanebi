@@ -18,7 +18,7 @@ LANGUAGE_CODE="fa-ir"; TIME_ZONE="Asia/Tehran"; USE_I18N=True; USE_TZ=True
 STATIC_URL="/static/"; STATIC_ROOT=BASE_DIR/"staticfiles"; STATICFILES_DIRS=[BASE_DIR/"static"]
 MEDIA_URL="/media/"; MEDIA_ROOT=BASE_DIR/"media"
 DEFAULT_AUTO_FIELD="django.db.models.BigAutoField"; AUTH_USER_MODEL="shop.User"
-LOGIN_URL="login"; LOGIN_REDIRECT_URL="account_orders"; LOGOUT_REDIRECT_URL="home"
+LOGIN_URL="login"; LOGIN_REDIRECT_URL="account_profile"; LOGOUT_REDIRECT_URL="home"
 EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend" if os.getenv("EMAIL_HOST_USER") else "django.core.mail.backends.console.EmailBackend"
 EMAIL_HOST=os.getenv("EMAIL_HOST","smtp.gmail.com"); EMAIL_PORT=int(os.getenv("EMAIL_PORT","587")); EMAIL_HOST_USER=os.getenv("EMAIL_HOST_USER",""); EMAIL_HOST_PASSWORD=os.getenv("EMAIL_HOST_PASSWORD",""); EMAIL_USE_TLS=os.getenv("EMAIL_USE_TLS","1")=="1"; DEFAULT_FROM_EMAIL=os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER or "noreply@localhost"
 SECURE_PROXY_SSL_HEADER=("HTTP_X_FORWARDED_PROTO","https"); SESSION_COOKIE_SECURE=DOMAIN not in ("localhost","127.0.0.1"); CSRF_COOKIE_SECURE=SESSION_COOKIE_SECURE; SECURE_CONTENT_TYPE_NOSNIFF=True; X_FRAME_OPTIONS="DENY"
