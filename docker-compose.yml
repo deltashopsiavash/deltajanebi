@@ -38,7 +38,7 @@ services:
   bot:
     image: deltajanebi-app:latest
     restart: unless-stopped
-    command: ["python", "manage.py", "telegram_bot_v4"]
+    command: ["python", "manage.py", "telegram_bot_v5"]
     env_file: .env
     depends_on:
       web:
