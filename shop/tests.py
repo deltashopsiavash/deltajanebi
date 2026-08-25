@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Category, Product
+from .models import Category, Product, SiteSetting
 from .services.source_sync import (
     _clean_source_description,
     _clean_source_name,
@@ -78,6 +78,23 @@ class StorefrontExperienceTests(TestCase):
         self.assertEqual(register_response.status_code, 200)
         self.assertContains(login_response, "auth-page-card")
         self.assertContains(register_response, "auth-page-card")
+
+    def test_site_logo_url_fallback_is_renderable(self):
+        settings = SiteSetting.load()
+        settings.logo_url = "https://example.com/logo.png"
+        settings.save(update_fields=["logo_url"])
+        self.assertEqual(settings.logo_src, "https://example.com/logo.png")
+        response = self.client.get("/")
+        self.assertContains(response, "https://example.com/logo.png")
+
+
+class TelegramBotSmokeTests(TestCase):
+    def test_management_command_module_imports_and_menu_builds(self):
+        from .management.commands import telegram_bot
+
+        markup = telegram_bot.menu()
+        self.assertIsNotNone(markup)
+        self.assertGreaterEqual(len(markup.inline_keyboard), 4)
 
 
 class SourceCleanupTests(TestCase):
