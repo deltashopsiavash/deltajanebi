@@ -1,9 +1,11 @@
 import os
 import re
 import unicodedata
+import uuid
 from decimal import Decimal, InvalidOperation
 
 from asgiref.sync import sync_to_async
+from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -16,15 +18,22 @@ from telegram.ext import (
     filters,
 )
 
-from shop.models import Order, Product, SiteSetting
-from shop.services.source_sync import scrape_product, sync_product
+from shop.models import Category, Order, Product, SiteSetting
+from shop.services.source_sync import scrape_product, sync_category_path, sync_product
 
-SPECIAL_URL, SPECIAL_MARKUP, MANUAL_NAME, MANUAL_PRICE, MANUAL_STOCK, MANUAL_IMAGE, SET_SHIPPING, SET_LOGO = range(8)
+(
+    SPECIAL_URL,
+    SPECIAL_MARKUP,
+    MANUAL_NAME,
+    MANUAL_PRICE,
+    MANUAL_STOCK,
+    MANUAL_CATEGORY,
+    MANUAL_IMAGE,
+    SET_SHIPPING,
+    SET_LOGO,
+) = range(9)
 
-_DIGIT_TRANS = str.maketrans(
-    "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-    "01234567890123456789",
-)
+_DIGIT_TRANS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
 _BIDI_CHARS = {
     "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
     "\u2066", "\u2067", "\u2068", "\u2069", "\ufeff",
@@ -41,35 +50,27 @@ def allowed(update):
 
 
 def normalize_number_text(value):
-    """Normalize Persian/Arabic digits, RTL markers, separators and common labels."""
     text = unicodedata.normalize("NFKC", str(value or "")).translate(_DIGIT_TRANS)
     text = "".join(ch for ch in text if ch not in _BIDI_CHARS)
     text = text.replace("٬", "").replace(",", "").replace("،", "").replace("٫", ".")
-    text = re.sub(r"\s+", "", text)
-    return text
+    return re.sub(r"\s+", "", text)
 
 
 def parse_markup_input(value):
-    """Return (markup_type, Decimal value) for 20%, %20, ۲۰٪, ٪۲۰ or fixed amounts."""
     text = normalize_number_text(value)
     is_percent = any(sign in text for sign in _PERCENT_SIGNS) or "درصد" in text
-
     for sign in _PERCENT_SIGNS:
         text = text.replace(sign, "")
     text = text.replace("درصد", "")
     text = re.sub(r"(?:تومان|تومن|ریال)$", "", text, flags=re.IGNORECASE)
-
     if not re.fullmatch(r"\d+(?:\.\d+)?", text):
         raise ValueError("invalid markup")
-
     try:
         number = Decimal(text)
     except InvalidOperation as exc:
         raise ValueError("invalid markup") from exc
-
     if number < 0:
         raise ValueError("negative markup")
-
     return (Product.MARKUP_PERCENT if is_percent else Product.MARKUP_FIXED), number
 
 
@@ -79,6 +80,13 @@ def parse_nonnegative_int(value):
     if not re.fullmatch(r"\d+", text):
         raise ValueError("invalid integer")
     return int(text)
+
+
+def parse_category_path(value):
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return []
+    return [part.strip()[:120] for part in text.split(">") if part.strip()]
 
 
 def menu():
@@ -92,10 +100,29 @@ def menu():
             InlineKeyboardButton("🔄 همگام‌سازی الان", callback_data="syncnow"),
         ],
         [
+            InlineKeyboardButton("📂 دسته‌بندی‌ها", callback_data="categories"),
             InlineKeyboardButton("🚚 هزینه ارسال", callback_data="shipping"),
-            InlineKeyboardButton("🖼 لوگوی سایت", callback_data="logo"),
         ],
+        [InlineKeyboardButton("🖼 لوگوی سایت", callback_data="logo")],
     ])
+
+
+def category_tree_text():
+    categories = list(Category.objects.filter(is_active=True).select_related("parent").order_by("parent_id", "order", "name"))
+    if not categories:
+        return "هنوز دسته‌بندی‌ای ساخته نشده."
+    children = {}
+    for category in categories:
+        children.setdefault(category.parent_id, []).append(category)
+    lines = []
+
+    def walk(parent_id=None, level=0):
+        for category in children.get(parent_id, []):
+            lines.append(f"{'  ' * level}{'↳ ' if level else '• '}{category.name}")
+            walk(category.id, level + 1)
+
+    walk()
+    return "📂 دسته‌بندی‌های سایت:\n\n" + "\n".join(lines[:80])
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,7 +133,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_menu(update, context):
     if not allowed(update):
         return ConversationHandler.END
-
     q = update.callback_query
     await q.answer()
 
@@ -122,6 +148,10 @@ async def on_menu(update, context):
     if q.data == "logo":
         await q.message.reply_text("لینک مستقیم لوگوی سایت را بفرست:")
         return SET_LOGO
+    if q.data == "categories":
+        text = await sync_to_async(category_tree_text)()
+        await q.message.reply_text(text, reply_markup=menu())
+        return ConversationHandler.END
     if q.data == "orders":
         rows = await sync_to_async(list)(Order.objects.all()[:10])
         text = "\n\n".join(
@@ -131,9 +161,9 @@ async def on_menu(update, context):
         return ConversationHandler.END
     if q.data == "syncnow":
         rows = await sync_to_async(list)(Product.objects.filter(source_type=Product.SYNCED, is_active=True))
-        for p in rows:
-            await sync_to_async(sync_product)(p)
-        await q.message.reply_text(f"✅ {len(rows)} محصول همگام شد.", reply_markup=menu())
+        for product in rows:
+            await sync_to_async(sync_product)(product)
+        await q.message.reply_text(f"✅ {len(rows)} محصول همگام شد؛ دسته‌بندی، قیمت، موجودی و اطلاعات هم بررسی شدند.", reply_markup=menu())
         return ConversationHandler.END
 
 
@@ -142,16 +172,19 @@ async def special_url(update, context):
     await update.message.reply_text("در حال خواندن محصول...")
     try:
         data = await sync_to_async(scrape_product)(url)
-    except Exception as e:
-        await update.message.reply_text(f"❌ {e}\nدوباره لینک را بفرست یا /cancel بزن.")
+    except Exception as exc:
+        await update.message.reply_text(f"❌ {exc}\nدوباره لینک را بفرست یا /cancel بزن.")
         return SPECIAL_URL
 
     context.user_data["special"] = {"url": url, "data": data}
+    category_line = " ← ".join(data.get("categories") or []) or "تشخیص داده نشد"
     await update.message.reply_text(
         f"✅ {data['name']}\n"
         f"قیمت منبع: {data['price']:,} تومان\n"
-        f"موجودی: {data['stock']}\n\n"
-        "افزایش قیمت را بفرست. همه این حالت‌ها معتبرند:\n"
+        f"موجودی: {data['stock']}\n"
+        f"دسته‌بندی: {category_line}\n"
+        f"تصاویر محصول: {len(data.get('gallery') or [])}\n\n"
+        "افزایش قیمت را بفرست:\n"
         "20%  |  %20  |  ۲۰٪  |  ٪۲۰  |  20000"
     )
     return SPECIAL_MARKUP
@@ -162,9 +195,7 @@ async def special_markup(update, context):
         typ, val = parse_markup_input(update.message.text)
     except (ValueError, InvalidOperation):
         await update.message.reply_text(
-            "❌ فرمت نامعتبر است.\n"
-            "درصد: 20% یا %20 یا ۲۰٪\n"
-            "مبلغ ثابت: 20000 یا ۲۰۰۰۰"
+            "❌ فرمت نامعتبر است.\nدرصد: 20% یا %20 یا ۲۰٪\nمبلغ ثابت: 20000 یا ۲۰۰۰۰"
         )
         return SPECIAL_MARKUP
 
@@ -172,14 +203,15 @@ async def special_markup(update, context):
     if not info:
         await update.message.reply_text("اطلاعات محصول منقضی شده. دوباره «افزودن محصول خاص» را بزن.", reply_markup=menu())
         return ConversationHandler.END
-
     data = info["data"]
 
     def create():
         sku = data.get("sku") or None
         if sku and Product.objects.filter(sku=sku).exists():
             sku = None
-        p = Product.objects.create(
+        category = sync_category_path(data.get("categories") or [])
+        product = Product.objects.create(
+            category=category,
             name=data["name"],
             description=data["description"],
             source_type=Product.SYNCED,
@@ -194,22 +226,20 @@ async def special_markup(update, context):
             markup_type=typ,
             markup_value=val,
         )
-        p.price = p.apply_markup(data["price"])
-        p.save(update_fields=["price"])
-        return p
+        product.price = product.apply_markup(data["price"])
+        product.save(update_fields=["price"])
+        return product
 
     try:
-        p = await sync_to_async(create)()
-    except Exception as e:
-        await update.message.reply_text(f"❌ خطا در ثبت محصول: {e}\n/cancel بزن و دوباره امتحان کن.")
+        product = await sync_to_async(create)()
+    except Exception as exc:
+        await update.message.reply_text(f"❌ خطا در ثبت محصول: {exc}\n/cancel بزن و دوباره امتحان کن.")
         return SPECIAL_MARKUP
 
     mode = "درصد" if typ == Product.MARKUP_PERCENT else "تومان ثابت"
     await update.message.reply_text(
-        f"✅ محصول خاص ثبت شد.\n"
-        f"افزایش: {val} {mode}\n"
-        f"قیمت فروش: {p.price:,} تومان\n"
-        "هر ۳۰ دقیقه بررسی می‌شود.",
+        f"✅ محصول خاص ثبت شد.\nافزایش: {val} {mode}\nقیمت فروش: {product.price:,} تومان\n"
+        f"دسته: {product.category.name if product.category else 'بدون دسته'}\nهر ۳۰ دقیقه بررسی می‌شود.",
         reply_markup=menu(),
     )
     context.user_data.pop("special", None)
@@ -238,21 +268,96 @@ async def manual_stock(update, context):
     except ValueError:
         await update.message.reply_text("فقط عدد بفرست؛ فارسی یا انگلیسی فرقی ندارد.")
         return MANUAL_STOCK
-    await update.message.reply_text("لینک عکس را بفرست؛ اگر نداری - بفرست:")
+    await update.message.reply_text(
+        "دسته‌بندی محصول را بفرست.\n"
+        "مثال ساده: کابل\n"
+        "برای زیر‌دسته: جانبی موبایل > کابل > کابل شارژ موبایل\n"
+        "اگر دسته نمی‌خواهی - بفرست."
+    )
+    return MANUAL_CATEGORY
+
+
+async def manual_category(update, context):
+    context.user_data["manual"]["categories"] = parse_category_path(update.message.text)
+    await update.message.reply_text(
+        "حالا عکس محصول را مستقیم همینجا ارسال کن (Photo یا فایل تصویر).\n"
+        "اگر خواستی لینک عکس بفرستی هم قبول می‌کنم؛ اگر عکس نداری - بفرست."
+    )
     return MANUAL_IMAGE
 
 
 async def manual_image(update, context):
-    d = context.user_data["manual"]
-    image = "" if update.message.text.strip() == "-" else update.message.text.strip()
-    p = await sync_to_async(Product.objects.create)(
-        name=d["name"],
-        price=d["price"],
-        stock=d["stock"],
-        image_url=image,
-        source_type=Product.MANUAL,
+    data = context.user_data.get("manual")
+    if not data:
+        await update.effective_message.reply_text("اطلاعات محصول منقضی شده؛ دوباره افزودن محصول عادی را بزن.", reply_markup=menu())
+        return ConversationHandler.END
+
+    image_bytes = None
+    image_filename = None
+    image_url = ""
+
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        tg_file = await photo.get_file()
+        image_bytes = bytes(await tg_file.download_as_bytearray())
+        image_filename = f"telegram-{uuid.uuid4().hex}.jpg"
+    elif update.message.document:
+        document = update.message.document
+        if not (document.mime_type or "").startswith("image/"):
+            await update.message.reply_text("این فایل تصویر نیست. عکس بفرست یا /cancel بزن.")
+            return MANUAL_IMAGE
+        if document.file_size and document.file_size > 15 * 1024 * 1024:
+            await update.message.reply_text("حجم عکس بیشتر از ۱۵ مگابایت است؛ تصویر کوچک‌تر بفرست.")
+            return MANUAL_IMAGE
+        tg_file = await document.get_file()
+        image_bytes = bytes(await tg_file.download_as_bytearray())
+        ext = {"image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(document.mime_type, ".jpg")
+        image_filename = f"telegram-{uuid.uuid4().hex}{ext}"
+    elif update.message.text:
+        text = update.message.text.strip()
+        if text != "-":
+            if not re.match(r"^https?://", text, re.I):
+                await update.message.reply_text("لینک عکس معتبر نیست؛ عکس مستقیم بفرست، لینک http/https بفرست یا - بزن.")
+                return MANUAL_IMAGE
+            image_url = text
+    else:
+        await update.message.reply_text("عکس، فایل تصویر، لینک عکس یا - بفرست.")
+        return MANUAL_IMAGE
+
+    def create():
+        category = sync_category_path(data.get("categories") or [])
+        product = Product(
+            category=category,
+            name=data["name"],
+            price=data["price"],
+            stock=data["stock"],
+            image_url=image_url,
+            source_type=Product.MANUAL,
+        )
+        if image_bytes and image_filename:
+            product.image.save(image_filename, ContentFile(image_bytes), save=False)
+        product.save()
+        if product.image:
+            product.image_url = product.image.url
+            product.gallery = [product.image.url]
+            product.save(update_fields=["image_url", "gallery"])
+        elif product.image_url:
+            product.gallery = [product.image_url]
+            product.save(update_fields=["gallery"])
+        return product
+
+    try:
+        product = await sync_to_async(create)()
+    except Exception as exc:
+        await update.message.reply_text(f"❌ خطا در ثبت محصول: {exc}")
+        return MANUAL_IMAGE
+
+    await update.message.reply_text(
+        f"✅ محصول عادی #{product.id} ثبت شد.\n"
+        f"دسته: {product.category.name if product.category else 'بدون دسته'}\n"
+        f"عکس: {'ثبت شد' if product.primary_image else 'ندارد'}",
+        reply_markup=menu(),
     )
-    await update.message.reply_text(f"✅ محصول عادی #{p.id} ثبت شد.", reply_markup=menu())
     context.user_data.pop("manual", None)
     return ConversationHandler.END
 
@@ -263,17 +368,17 @@ async def set_shipping(update, context):
     except ValueError:
         await update.message.reply_text("فقط عدد بفرست؛ فارسی یا انگلیسی فرقی ندارد.")
         return SET_SHIPPING
-    s = await sync_to_async(SiteSetting.load)()
-    s.shipping_cost = value
-    await sync_to_async(s.save)(update_fields=["shipping_cost"])
+    settings = await sync_to_async(SiteSetting.load)()
+    settings.shipping_cost = value
+    await sync_to_async(settings.save)(update_fields=["shipping_cost"])
     await update.message.reply_text("✅ هزینه ارسال تغییر کرد.", reply_markup=menu())
     return ConversationHandler.END
 
 
 async def set_logo(update, context):
-    s = await sync_to_async(SiteSetting.load)()
-    s.logo_url = update.message.text.strip()
-    await sync_to_async(s.save)(update_fields=["logo_url"])
+    settings = await sync_to_async(SiteSetting.load)()
+    settings.logo_url = update.message.text.strip()
+    await sync_to_async(settings.save)(update_fields=["logo_url"])
     await update.message.reply_text("✅ لوگو تغییر کرد.", reply_markup=menu())
     return ConversationHandler.END
 
@@ -290,11 +395,10 @@ async def order_cmd(update, context):
         return
     oid = int(update.message.text.split("_", 1)[1])
     try:
-        o = await sync_to_async(Order.objects.get)(pk=oid)
+        order = await sync_to_async(Order.objects.get)(pk=oid)
     except Order.DoesNotExist:
         await update.message.reply_text("سفارش پیدا نشد.")
         return
-
     kb = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ آماده‌سازی", callback_data=f"st:{oid}:preparing"),
@@ -303,8 +407,8 @@ async def order_cmd(update, context):
         [InlineKeyboardButton("❌ لغو", callback_data=f"st:{oid}:cancelled")],
     ])
     await update.message.reply_text(
-        f"سفارش #{o.id}\n{o.full_name} | {o.phone}\n{o.total:,} تومان\n"
-        f"وضعیت: {o.get_status_display()}\nآدرس: {o.province}، {o.city}، {o.address}",
+        f"سفارش #{order.id}\n{order.full_name} | {order.phone}\n{order.total:,} تومان\n"
+        f"وضعیت: {order.get_status_display()}\nآدرس: {order.province}، {order.city}، {order.address}",
         reply_markup=kb,
     )
 
@@ -315,10 +419,10 @@ async def status_cb(update, context):
     q = update.callback_query
     await q.answer()
     _, oid, status = q.data.split(":")
-    o = await sync_to_async(Order.objects.get)(pk=int(oid))
-    o.status = status
-    await sync_to_async(o.save)(update_fields=["status"])
-    await q.edit_message_text(f"✅ سفارش #{o.id}: {o.get_status_display()}")
+    order = await sync_to_async(Order.objects.get)(pk=int(oid))
+    order.status = status
+    await sync_to_async(order.save)(update_fields=["status"])
+    await q.edit_message_text(f"✅ سفارش #{order.id}: {order.get_status_display()}")
 
 
 class Command(BaseCommand):
@@ -330,14 +434,24 @@ class Command(BaseCommand):
 
         app = Application.builder().token(token).build()
         conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(on_menu, pattern="^(special|manual|orders|syncnow|shipping|logo)$")],
+            entry_points=[
+                CallbackQueryHandler(
+                    on_menu,
+                    pattern="^(special|manual|orders|syncnow|categories|shipping|logo)$",
+                )
+            ],
             states={
                 SPECIAL_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, special_url)],
                 SPECIAL_MARKUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, special_markup)],
                 MANUAL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_name)],
                 MANUAL_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_price)],
                 MANUAL_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_stock)],
-                MANUAL_IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_image)],
+                MANUAL_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_category)],
+                MANUAL_IMAGE: [
+                    MessageHandler(filters.PHOTO, manual_image),
+                    MessageHandler(filters.Document.IMAGE, manual_image),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, manual_image),
+                ],
                 SET_SHIPPING: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_shipping)],
                 SET_LOGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_logo)],
             },
