@@ -18,7 +18,7 @@ def health(request):
 
 def home(request):
     offer_candidates = list(
-        Product.objects.filter(is_active=True, stock__gt=0, sale_price__isnull=False)
+        Product.objects.filter(is_active=True, sale_price__isnull=False)
         .select_related("category")
         .order_by("sale_ends_at")[:30]
     )
@@ -27,7 +27,8 @@ def home(request):
         request,
         "shop/home.html",
         {
-            "products": Product.objects.filter(is_active=True, stock__gt=0).select_related("category")[:24],
+            # ناموجودها هم باید در فروشگاه دیده شوند؛ جدیدترین‌ها فقط ۱۰ مورد است.
+            "products": Product.objects.filter(is_active=True).select_related("category")[:10],
             "offers": offers,
             "categories": Category.objects.filter(is_active=True, parent__isnull=True)[:12],
             "banners": Banner.objects.filter(is_active=True).exclude(image="", image_url="")[:8],
