@@ -5,23 +5,13 @@
   <div class="auth-page-card">
     <aside class="auth-brand-panel">
       <div class="auth-brand-orb"></div>
-      {% if store_settings.logo_url %}<img src="{{ store_settings.logo_url }}" class="auth-brand-logo" alt="">{% else %}<div class="auth-big-mark">D</div><div class="auth-big-name">DELTA <span>جانبی</span></div>{% endif %}
+      {% if store_settings.logo_src %}<img src="{{ store_settings.logo_src }}" class="auth-brand-logo" alt="{{ store_settings.store_name }}">{% else %}<div class="auth-big-mark user-auth-mark"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M4.5 20c.8-4 3.4-6 7.5-6s6.7 2 7.5 6"></path></svg></div><div class="auth-big-name">{{ store_settings.store_name|default:'دلتا جانبی' }}</div>{% endif %}
       <p>یک حساب بساز و همه سفارش‌ها و پیگیری‌ها را یکجا داشته باش.</p>
     </aside>
     <section class="auth-form-panel">
       <div class="auth-heading"><h2>ساخت حساب جدید</h2><p>ثبت‌نام سریع با ایمیل و شماره موبایل.</p></div>
       {% if form.errors %}<div class="auth-errors">{% for field in form %}{% for error in field.errors %}<div>{{ field.label }}: {{ error }}</div>{% endfor %}{% endfor %}{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
-      <form method="post" class="auth-modern-form">
-        {% csrf_token %}
-        <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input type="email" name="email" value="{{ form.email.value|default:'' }}" required autocomplete="email" placeholder="example@email.com"></div></label>
-        <label><span>شماره موبایل</span><div class="auth-input"><i>☎</i><input type="tel" name="phone" value="{{ form.phone.value|default:'' }}" autocomplete="tel" placeholder="09xxxxxxxxx"></div></label>
-        <div class="auth-two-col">
-          <label><span>رمز عبور</span><div class="auth-input"><input type="password" name="password1" required autocomplete="new-password" placeholder="رمز عبور"></div></label>
-          <label><span>تکرار رمز</span><div class="auth-input"><input type="password" name="password2" required autocomplete="new-password" placeholder="تکرار رمز"></div></label>
-        </div>
-        <label class="auth-check auth-terms"><input type="checkbox" checked required><span>قوانین و شرایط استفاده از فروشگاه را می‌پذیرم.</span></label>
-        <button class="auth-primary" type="submit">ایجاد حساب کاربری</button>
-      </form>
+      <form method="post" class="auth-modern-form">{% csrf_token %}<label><span>ایمیل</span><div class="auth-input"><i>✉</i><input type="email" name="email" value="{{ form.email.value|default:'' }}" required autocomplete="email" placeholder="example@email.com"></div></label><label><span>شماره موبایل</span><div class="auth-input"><i>☎</i><input type="tel" name="phone" value="{{ form.phone.value|default:'' }}" autocomplete="tel" placeholder="09xxxxxxxxx"></div></label><div class="auth-two-col"><label><span>رمز عبور</span><div class="auth-input"><input type="password" name="password1" required autocomplete="new-password" placeholder="رمز عبور"></div></label><label><span>تکرار رمز</span><div class="auth-input"><input type="password" name="password2" required autocomplete="new-password" placeholder="تکرار رمز"></div></label></div><label class="auth-check auth-terms"><input type="checkbox" checked required><span>قوانین و شرایط استفاده از فروشگاه را می‌پذیرم.</span></label><button class="auth-primary" type="submit">ایجاد حساب کاربری</button></form>
       <div class="auth-switch-note">قبلاً حساب ساختی؟ <a href="{% url 'login' %}" style="color:var(--sf-blue);font-weight:900">ورود</a></div>
     </section>
   </div>
