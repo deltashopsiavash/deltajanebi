@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 from bs4 import BeautifulSoup
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
-from .models import Category, Product, SiteSetting
+from .models import Category, Product, SiteSetting, User
 from .services.source_sync import (
     _clean_source_description,
     _clean_source_name,
@@ -58,6 +61,21 @@ class CategoryHierarchyTests(TestCase):
         self.assertEqual(root.image_url, "https://example.com/cable.jpg")
 
 
+class ProductManagementTests(TestCase):
+    def test_product_gets_human_search_code(self):
+        product = Product.objects.create(name="کابل", price=100000, stock=1)
+        self.assertEqual(product.public_code, f"DJ-{product.pk:06d}")
+
+    def test_limited_offer_changes_effective_price(self):
+        product = Product.objects.create(name="شارژر", price=300000, stock=1)
+        product.sale_price = 250000
+        product.sale_starts_at = timezone.now()
+        product.sale_ends_at = timezone.now() + timedelta(hours=1)
+        product.save(update_fields=["sale_price", "sale_starts_at", "sale_ends_at"])
+        self.assertTrue(product.is_sale_active)
+        self.assertEqual(product.effective_price, 250000)
+
+
 class StorefrontExperienceTests(TestCase):
     def setUp(self):
         self.leaf = sync_category_path(["جانبی موبایل", "کابل", "کابل شارژ موبایل"])
@@ -87,14 +105,27 @@ class StorefrontExperienceTests(TestCase):
         response = self.client.get("/")
         self.assertContains(response, "https://example.com/logo.png")
 
+    def test_authenticated_header_has_account_menu_and_logout(self):
+        user = User.objects.create_user(email="test@example.com", password="StrongPass123!")
+        self.client.force_login(user)
+        response = self.client.get("/")
+        self.assertContains(response, "مشخصات حساب")
+        self.assertContains(response, "سفارش‌ها")
+        self.assertContains(response, "خروج از حساب")
+        self.assertEqual(self.client.get(reverse("account_profile")).status_code, 200)
+
 
 class TelegramBotSmokeTests(TestCase):
-    def test_management_command_module_imports_and_menu_builds(self):
+    def test_management_command_module_imports_and_main_menu_builds(self):
         from .management.commands import telegram_bot
 
-        markup = telegram_bot.menu()
+        markup = telegram_bot.main_menu()
         self.assertIsNotNone(markup)
-        self.assertGreaterEqual(len(markup.inline_keyboard), 4)
+        labels = [button.text for row in markup.inline_keyboard for button in row]
+        self.assertIn("🧰 محصولات عادی", labels)
+        self.assertIn("🔗 محصولات خاص", labels)
+        self.assertIn("🔎 جستجوی محصول", labels)
+        self.assertIn("💾 بکاپ", labels)
 
 
 class SourceCleanupTests(TestCase):
