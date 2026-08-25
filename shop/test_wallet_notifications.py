@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import reverse
 
@@ -19,6 +21,21 @@ class WalletAndCustomerCodeTests(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.customer_code, f"#{1000 + self.user.pk}")
         self.assertTrue(self.user.customer_code.startswith("#1"))
+
+    def test_new_registration_notifies_admin(self):
+        with patch("shop.signals.notify_admins") as mocked:
+            user = User.objects.create_user(
+                email="new-member@example.com",
+                password="StrongPass123!",
+                first_name="رضا",
+                last_name="محمدی",
+            )
+        user.refresh_from_db()
+        mocked.assert_called_once()
+        report = mocked.call_args.args[0]
+        self.assertIn("عضویت جدید", report)
+        self.assertIn(user.customer_code, report)
+        self.assertIn("new-member@example.com", report)
 
     def test_wallet_adjustment_and_history(self):
         self.assertEqual(wallet_balance(self.user.pk), 0)
