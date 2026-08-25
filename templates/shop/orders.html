@@ -1,1 +1,14 @@
-{% extends 'base.html' %}{% block content %}<section class="wrap page"><h1>سفارش‌های من</h1><div class="orders">{% for o in orders %}<a href="{% url 'account_order_detail' o.id %}"><b>سفارش #{{ o.id }}</b><span>{{ o.get_status_display }}</span><strong>{{ o.total|floatformat:0 }} تومان</strong></a>{% empty %}<div class="empty">هنوز سفارشی ندارید.</div>{% endfor %}</div></section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}سفارش‌های من | {{ store_settings.store_name }}{% endblock %}
+{% block content %}
+<section class="wrap account-center">
+  <div class="account-page-head"><div><span class="eyebrow">حساب کاربری</span><h1>سفارش‌های من</h1><p>وضعیت خریدها و کدهای رهگیری را از اینجا دنبال کن.</p></div></div>
+  <div class="account-layout">
+    <aside class="account-side-card">
+      <div class="account-avatar">{{ user.email|first|upper }}</div><strong>{{ user.get_full_name|default:'کاربر فروشگاه' }}</strong><small>{{ user.email }}</small>
+      <nav><a href="{% url 'account_profile' %}">👤 مشخصات حساب</a><a class="active" href="{% url 'account_orders' %}">📦 سفارش‌ها</a><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">↪ خروج</button></form></nav>
+    </aside>
+    <div class="account-main-card"><div class="account-card-title"><h2>تاریخچه سفارش‌ها</h2><p>برای دیدن جزئیات هر سفارش روی آن بزن.</p></div><div class="orders">{% for o in orders %}<a href="{% url 'account_order_detail' o.id %}"><b>سفارش #{{ o.id }}</b><span>{{ o.get_status_display }}</span><strong>{{ o.total|floatformat:0 }} تومان</strong></a>{% empty %}<div class="empty">هنوز سفارشی نداری.</div>{% endfor %}</div></div>
+  </div>
+</section>
+{% endblock %}
