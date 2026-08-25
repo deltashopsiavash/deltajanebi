@@ -17,11 +17,18 @@ def health(request):
 
 
 def home(request):
+    offer_candidates = list(
+        Product.objects.filter(is_active=True, stock__gt=0, sale_price__isnull=False)
+        .select_related("category")
+        .order_by("sale_ends_at")[:30]
+    )
+    offers = [product for product in offer_candidates if product.is_sale_active][:12]
     return render(
         request,
         "shop/home.html",
         {
             "products": Product.objects.filter(is_active=True, stock__gt=0).select_related("category")[:24],
+            "offers": offers,
             "categories": Category.objects.filter(is_active=True, parent__isnull=True)[:12],
             "banners": Banner.objects.filter(is_active=True).exclude(image="", image_url="")[:8],
         },
