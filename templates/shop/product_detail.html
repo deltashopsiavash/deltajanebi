@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load store_filters %}
 {% block title %}{{ product.name }}{% endblock %}
 {% block content %}
 <section class="wrap pd-page">
@@ -17,11 +18,11 @@
       <div class="pd-buy-divider"></div>
       <div class="pd-price-label">قیمت فروش</div>
       {% if product.is_sale_active %}
-        <div class="sale-price-block"><div class="pd-price"><strong>{{ product.effective_price|floatformat:0 }}</strong><span>تومان</span></div><span class="sale-badge">پیشنهاد ویژه</span></div>
-        <div class="sale-old-price">{{ product.price|floatformat:0 }} تومان</div>
+        <div class="sale-price-block"><div class="pd-price"><strong>{{ product.effective_price|money }}</strong><span>تومان</span></div><span class="sale-badge">پیشنهاد ویژه</span></div>
+        <div class="sale-old-price">{{ product.price|money }} تومان</div>
         {% if product.sale_remaining_seconds %}<div class="sale-timer" data-sale-seconds="{{ product.sale_remaining_seconds }}">00:00:00</div>{% endif %}
       {% else %}
-        <div class="pd-price"><strong>{{ product.price|floatformat:0 }}</strong><span>تومان</span></div>
+        <div class="pd-price"><strong>{{ product.price|money }}</strong><span>تومان</span></div>
       {% endif %}
       <form method="post" action="{% url 'cart_add' product.id %}" class="pd-add-form">
         {% csrf_token %}
@@ -37,7 +38,7 @@
       {% if product.sku %}<div class="pd-sku">کد مرجع کالا: <b>{{ product.sku }}</b></div>{% endif %}
 
       <div class="pd-shipping-card"><div class="pd-shipping-icon">↗</div><div><strong>شرایط ارسال کالا</strong><p>سفارش پس از تأیید پرداخت وارد مرحله آماده‌سازی می‌شود و وضعیت آن از حساب کاربری قابل پیگیری است.</p></div></div>
-      <div class="pd-service-card"><div class="pd-service-art">🚚</div><div><strong>ارسال مطمئن سفارش</strong><p>{% if store_settings.shipping_cost %}هزینه ارسال فعلی: {{ store_settings.shipping_cost|floatformat:0 }} تومان{% else %}هزینه ارسال در مرحله ثبت سفارش محاسبه می‌شود.{% endif %}</p></div></div>
+      <div class="pd-service-card"><div class="pd-service-art">🚚</div><div><strong>ارسال مطمئن سفارش</strong><p>{% if store_settings.shipping_cost %}هزینه ارسال فعلی: {{ store_settings.shipping_cost|money }} تومان{% else %}هزینه ارسال در مرحله ثبت سفارش محاسبه می‌شود.{% endif %}</p></div></div>
 
       {% if feature_specs %}<div class="pd-feature-title">ویژگی‌های محصول</div><div class="pd-feature-chips">{% for key,value in feature_specs %}<div><small>{{ key }}</small><strong>{{ value }}</strong></div>{% endfor %}</div>{% endif %}
     </section>
