@@ -48,7 +48,6 @@ async def on_callback(update: Update, context):
         return
 
     if data.startswith("commerce:toggle:"):
-        # v9 handles validation/toggle; replace its renderer so the complete summary is shown.
         v9._show_commerce = show_commerce
         await v9.on_callback(update, context)
         return
@@ -59,6 +58,9 @@ async def on_callback(update: Update, context):
         order = await sync_to_async(Order.objects.select_related("user").prefetch_related("items__product").get)(pk=oid)
         if order.payment_method != Order.PAYMENT_CARD or not order.receipt:
             await q.message.reply_text("این سفارش رسید کارت‌به‌کارت قابل تایید ندارد.")
+            return
+        if order.payment_status in (Order.PAY_REJECTED, Order.PAY_FAILED) or order.status in ("payment_rejected", "cancelled"):
+            await q.message.reply_text("این رسید قبلاً رد/بسته شده و موجودی سفارش آزاد شده است؛ دیگر قابل تایید نیست.")
             return
         if order.payment_status != Order.PAY_PAID:
             await sync_to_async(mark_paid)(order)
