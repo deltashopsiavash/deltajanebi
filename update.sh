@@ -34,14 +34,14 @@ docker run --rm \
   deltajanebi-app:latest \
   manage.py makemigrations --check --dry-run
 
-echo "==> بررسی ربات مدیریت و پاکسازی تصویر"
+echo "==> بررسی ربات مدیریت، Bulk Sync و پاکسازی تصویر"
 docker run --rm \
   --entrypoint python \
   -e DJANGO_SECRET_KEY=update-smoke-test-only \
   -e DEBUG=0 \
   -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
   deltajanebi-app:latest \
-  manage.py shell -c 'from shop.management.commands import telegram_bot_v6 as b; from shop.services.source_sanitizer import normalize_brand_terms; assert b.source_actions; assert normalize_brand_terms("همراه دوم، HAMRAHEDOVOM"); print("telegram_bot_v6 + sanitizer: OK")'
+  manage.py shell -c 'from shop.management.commands import telegram_bot_v7 as b; from shop.services.source_catalog import discover_product_urls, upsert_source_product; from shop.services.source_sanitizer import normalize_brand_terms; assert b.main_menu().inline_keyboard; assert b.source_actions; assert callable(discover_product_urls) and callable(upsert_source_product); assert normalize_brand_terms("همراه دوم، HAMRAHEDOVOM"); print("telegram_bot_v7 + bulk catalog + sanitizer: OK")'
 
 echo "==> اجرای تست‌های قبل از انتشار"
 docker run --rm \
