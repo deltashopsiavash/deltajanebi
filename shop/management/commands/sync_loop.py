@@ -44,18 +44,25 @@ class Command(BaseCommand):
                 site.save(update_fields=["last_bulk_sync_at"])
 
         self.stdout.write(f"Cycle complete. checked={checked}, change_blocks={len(change_lines)}, errors={len(errors)}")
+        now = timezone.localtime().strftime("%Y/%m/%d - %H:%M")
 
-        # اگر هیچ محصولی تغییر نکرده باشد، گزارش خالی به تلگرام ارسال نمی‌شود.
         if change_lines:
-            now = timezone.localtime().strftime("%Y/%m/%d - %H:%M")
             chunks = _chunk_changes(change_lines, limit=3300)
             for index, chunk in enumerate(chunks, 1):
                 notify_admins(
                     f"🔄 گزارش همگام‌سازی خودکار\n"
                     f"🕒 {now} به وقت ایران\n"
+                    f"📦 بررسی‌شده: {checked:,}\n"
                     f"📋 بخش {index}/{len(chunks)}\n\n"
                     f"{chunk}"
                 )
+        else:
+            notify_admins(
+                f"✅ همگام‌سازی خودکار انجام شد\n"
+                f"🕒 {now} به وقت ایران\n"
+                f"📦 بررسی‌شده: {checked:,}\n"
+                "تغییری در محصولات پیدا نشد."
+            )
 
         if errors:
             notify_admins(
