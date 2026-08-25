@@ -82,7 +82,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         old.set_state(context, "set_phone")
         site = await sync_to_async(SiteSetting.load)()
-        await q.message.reply_text(f"☎️ تلفن فعلی: {site.phone or 'ثبت نشده'}\n\nشماره جدید را بفرست؛ مثال +989121234567 یا tel:+989121234567")
+        await q.message.reply_text(
+            f"☎️ شماره تماس دکمه‌های سایت: {site.phone or 'ثبت نشده'}\n\n"
+            "این شماره فقط برای دکمه‌های تماس بالای موبایل و نوار پایین استفاده می‌شود.\n"
+            "شماره جدید را بفرست؛ مثال +989121234567 یا tel:+989121234567"
+        )
         return
 
     if data == "set:footer":
@@ -90,7 +94,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         site = await sync_to_async(SiteSetting.load)()
         old.set_state(context, "footer_address")
         await q.message.reply_text(
-            "📝 تنظیم فوتر سایت\n\n"
+            "📝 تنظیم توضیحات و فوتر سایت\n\n"
             f"آدرس فعلی:\n{site.address or 'ثبت نشده'}\n\n"
             "آدرس جدید را بفرست. برای خالی‌کردن - بفرست."
         )
@@ -143,11 +147,24 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         site.phone = phone
         await sync_to_async(site.save)(update_fields=["phone"])
         old.clear_state(context)
-        await message.reply_text(f"✅ تلفن سایت ذخیره شد: {phone}", reply_markup=settings_menu())
+        await message.reply_text(f"✅ شماره دکمه تماس ذخیره شد: {phone}", reply_markup=settings_menu())
         return
 
     if state == "footer_address":
         flow["address"] = "" if text == "-" else text
+        context.user_data["awaiting"] = "footer_phone"
+        await message.reply_text("☎️ شماره تماسی که داخل فوتر نمایش داده شود را بفرست. برای خالی‌کردن - بفرست.")
+        return
+
+    if state == "footer_phone":
+        if text == "-":
+            flow["footer_phone"] = ""
+        else:
+            try:
+                flow["footer_phone"] = normalize_phone(text)
+            except ValueError:
+                await message.reply_text("❌ شماره معتبر نیست. مثال: +989121234567 یا -")
+                return
         context.user_data["awaiting"] = "footer_email"
         await message.reply_text("📧 ایمیل تماس فروشگاه را بفرست. برای خالی‌کردن - بفرست.")
         return
@@ -170,10 +187,11 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if state == "footer_support":
         site = await sync_to_async(SiteSetting.load)()
         site.address = flow.get("address", "")
+        site.footer_phone = flow.get("footer_phone", "")
         site.contact_email = flow.get("contact_email", "")
         site.footer_description = flow.get("footer_description", "")
         site.support_text = "" if text == "-" else text[:240]
-        await sync_to_async(site.save)(update_fields=["address", "contact_email", "footer_description", "support_text"])
+        await sync_to_async(site.save)(update_fields=["address", "footer_phone", "contact_email", "footer_description", "support_text"])
         old.clear_state(context)
         await message.reply_text("✅ اطلاعات فوتر ذخیره شد.", reply_markup=settings_menu())
         return
