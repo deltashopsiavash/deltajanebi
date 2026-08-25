@@ -1,1 +1,33 @@
-{% extends 'base.html' %}{% block content %}<section class="hero wrap"><div><span class="eyebrow">لوازم جانبی موبایل</span><h1>خرید سریع، موجودی واقعی و قیمت به‌روز</h1><p>قاب، کابل، شارژر، هندزفری، هولدر و صدها محصول دیگر.</p><a class="btn" href="#products">مشاهده محصولات</a></div>{% if store_settings.home_banner_url %}<img src="{{ store_settings.home_banner_url }}">{% else %}<div class="hero-art">ACCESSORIES</div>{% endif %}</section>{% if categories %}<section class="wrap"><div class="section-head"><h2>دسته‌بندی‌ها</h2></div><div class="cats">{% for c in categories %}<a href="{% url 'category' c.slug %}">{% if c.image_url %}<img src="{{ c.image_url }}">{% endif %}<span>{{ c.name }}</span></a>{% endfor %}</div></section>{% endif %}<section class="wrap" id="products"><div class="section-head"><h2>جدیدترین محصولات</h2><a href="{% url 'search' %}">مشاهده همه</a></div>{% include 'shop/_grid.html' %}</section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero wrap">
+  <div>
+    <span class="eyebrow">لوازم جانبی موبایل</span>
+    <h1>خرید سریع، موجودی واقعی و قیمت به‌روز</h1>
+    <p>قاب، کابل، شارژر، هندزفری، هولدر و صدها محصول دیگر.</p>
+    <a class="btn" href="#products">مشاهده محصولات</a>
+  </div>
+  {% if store_settings.home_banner_url %}<img src="{{ store_settings.home_banner_url }}" alt="">{% else %}<div class="hero-art">ACCESSORIES</div>{% endif %}
+</section>
+
+{% if categories %}
+<section class="wrap">
+  <div class="home-category-head"><h2>دسته‌بندی محصولات</h2><p>سریع‌تر به چیزی که می‌خواهی برس</p></div>
+  <div class="category-orbits">
+    {% for c in categories %}
+    <a class="category-orbit" href="{% url 'category' c.slug %}">
+      <span class="category-orbit-media">
+        {% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span class="category-orbit-letter">{{ c.name|slice:':1' }}</span>{% endif %}
+      </span>
+      <span>{{ c.name }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="wrap" id="products">
+  <div class="section-head"><h2>جدیدترین محصولات</h2><a href="{% url 'search' %}">مشاهده همه</a></div>
+  {% include 'shop/_grid.html' %}
+</section>
+{% endblock %}
