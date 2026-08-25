@@ -29,11 +29,13 @@ services:
       - static_data:/app/staticfiles
       - media_data:/app/media
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/"]
+      # Check the real storefront page, not only a DB-free ping endpoint.
+      # This catches migration/template/query errors that otherwise return HTTP 500.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 10s
       timeout: 5s
       retries: 18
-      start_period: 10s
+      start_period: 15s
 
   bot:
     image: deltajanebi-app:latest
