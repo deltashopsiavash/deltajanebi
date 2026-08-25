@@ -17,10 +17,12 @@ class WalletAndCustomerCodeTests(TestCase):
             last_name="احمدی",
         )
 
-    def test_customer_code_is_short(self):
+    def test_customer_code_is_short_and_sequential(self):
         self.user.refresh_from_db()
-        self.assertEqual(self.user.customer_code, f"#{1000 + self.user.pk}")
-        self.assertTrue(self.user.customer_code.startswith("#1"))
+        self.assertEqual(self.user.customer_code, "#1001")
+        second = User.objects.create_user(email="wallet2@example.com", password="StrongPass123!")
+        second.refresh_from_db()
+        self.assertEqual(second.customer_code, "#1002")
 
     def test_new_registration_notifies_admin(self):
         with patch("shop.signals.notify_admins") as mocked:
