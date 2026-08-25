@@ -1,0 +1,3 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}قوانین و مقررات | {{ store_settings.store_name }}{% endblock %}
+{% block content %}<link rel="stylesheet" href="{% static 'css/commerce.css' %}"><section class="wrap commerce-page"><article class="terms-card"><h1>قوانین و مقررات {{ settings.store_name }}</h1><div class="terms-body">{% if settings.terms_text %}{{ settings.terms_text|linebreaksbr }}{% else %}متن قوانین و مقررات هنوز توسط مدیریت ثبت نشده است.{% endif %}</div></article></section>{% endblock %}
