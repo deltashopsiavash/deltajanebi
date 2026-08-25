@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*.sqlite3
+media/
+staticfiles/
+.pytest_cache/
+.mypy_cache/
+.vscode/
+.idea/
+README.md
