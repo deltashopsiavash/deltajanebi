@@ -106,7 +106,6 @@ def _parse_sitemap(response):
 
 
 def discover_product_urls(site):
-    """Best-effort full catalog discovery. Prefer sitemaps; fall back to bounded storefront crawling."""
     queue = []
     for value in _robots_sitemaps(site) + [
         urljoin(site.base_url.rstrip("/") + "/", "sitemap.xml"),
@@ -201,16 +200,29 @@ def _existing_for_source(site, url, data):
         return product
     source_code = str(data.get("sku") or "").strip()
     if source_code:
-        product = Product.objects.filter(
+        return Product.objects.filter(
             source_type=Product.SYNCED,
             source_product_code=source_code,
             source_url__icontains=site.hostname,
         ).first()
-    return product
+    return None
+
+
+def _snapshot(product):
+    if not product:
+        return None
+    return {
+        "name": product.name,
+        "source_price": int(product.source_price or 0),
+        "price": int(product.price or 0),
+        "stock": int(product.stock or 0),
+        "image_url": product.image_url or "",
+        "gallery": tuple(product.gallery or []),
+        "specs": dict(product.specs or {}),
+    }
 
 
 def upsert_source_product(site, url):
-    """Import/update one source product using site-level markup, preserving manual product overrides."""
     data = source_sync.scrape_product(url)
     canonical_url = data.get("source_url") or url
     product = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
@@ -258,6 +270,31 @@ def upsert_source_product(site, url):
     product.sync_error = ""
     product.save()
     return product, created
+
+
+def upsert_source_product_with_changes(site, url):
+    data = source_sync.scrape_product(url)
+    canonical_url = data.get("source_url") or url
+    existing = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
+    before = _snapshot(existing)
+
+    # Avoid a second request by temporarily using the already scraped payload.
+    original = source_sync.scrape_product
+    source_sync.scrape_product = lambda _url: data
+    try:
+        product, created = upsert_source_product(site, canonical_url)
+    finally:
+        source_sync.scrape_product = original
+
+    after = _snapshot(product)
+    changes = {}
+    if created:
+        changes["new"] = True
+    else:
+        for key in ("name", "source_price", "price", "stock", "image_url", "gallery", "specs"):
+            if before.get(key) != after.get(key):
+                changes[key] = (before.get(key), after.get(key))
+    return product, created, changes
 
 
 def source_products(site):
