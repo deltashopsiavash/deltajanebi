@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from shop.management.commands.telegram_bot_v8 import _catalog_urls, _change_lines, _chunk_changes
 from shop.models import SourceSite
-from shop.services.source_catalog import upsert_source_product_with_changes
+from shop.services.source_catalog import source_products, upsert_source_product_with_changes
 from shop.services.telegram_notify import notify_admins
 
 
@@ -27,12 +27,7 @@ class Command(BaseCommand):
                 urls = _catalog_urls(site)
             except Exception as exc:
                 errors.append(f"{site.name} discovery: {str(exc)[:160]}")
-                urls = list(
-                    site and __import__("shop.services.source_catalog", fromlist=["source_products"])
-                    .source_products(site)
-                    .exclude(source_url="")
-                    .values_list("source_url", flat=True)
-                )
+                urls = list(source_products(site).exclude(source_url="").values_list("source_url", flat=True))
 
             for url in urls:
                 checked += 1
@@ -50,7 +45,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Cycle complete. checked={checked}, change_blocks={len(change_lines)}, errors={len(errors)}")
 
-        # برای جلوگیری از اسپم، اگر هیچ محصولی تغییر نکرده باشد پیام جداگانه ارسال نمی‌شود.
+        # اگر هیچ محصولی تغییر نکرده باشد، گزارش خالی به تلگرام ارسال نمی‌شود.
         if change_lines:
             now = timezone.localtime().strftime("%Y/%m/%d - %H:%M")
             chunks = _chunk_changes(change_lines, limit=3300)
