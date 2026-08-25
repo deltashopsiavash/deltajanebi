@@ -99,6 +99,15 @@ class StorefrontExperienceTests(TestCase):
         self.assertContains(response, "data-banner-dot=\"1\"")
         self.assertNotContains(response, "خرید سریع، موجودی واقعی و قیمت به‌روز")
 
+    def test_mobile_call_buttons_and_zero_cart_badge_render(self):
+        settings = SiteSetting.load()
+        settings.phone = "+989121234567"
+        settings.save(update_fields=["phone"])
+        response = self.client.get("/")
+        self.assertContains(response, 'href="tel:+989121234567"')
+        self.assertContains(response, "تماس با ما")
+        self.assertContains(response, 'class="mnav-count">0</span>')
+
     def test_login_and_register_pages_render_modern_shell(self):
         login_response = self.client.get(reverse("login"))
         register_response = self.client.get(reverse("register"))
@@ -127,7 +136,7 @@ class StorefrontExperienceTests(TestCase):
 
 class TelegramBotSmokeTests(TestCase):
     def test_management_command_module_imports_and_main_menu_builds(self):
-        from .management.commands import telegram_bot
+        from .management.commands import telegram_bot, telegram_bot_v3
 
         markup = telegram_bot.main_menu()
         self.assertIsNotNone(markup)
@@ -136,6 +145,10 @@ class TelegramBotSmokeTests(TestCase):
         self.assertIn("🔗 محصولات خاص", labels)
         self.assertIn("🔎 جستجوی محصول", labels)
         self.assertIn("💾 بکاپ", labels)
+
+        settings_labels = [button.text for row in telegram_bot_v3.settings_menu().inline_keyboard for button in row]
+        self.assertIn("☎️ تلفن", settings_labels)
+        self.assertEqual(telegram_bot_v3.normalize_phone("tel:+989121234567"), "+989121234567")
 
 
 class SourceCleanupTests(TestCase):
