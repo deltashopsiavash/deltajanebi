@@ -53,6 +53,8 @@ services:
     restart: unless-stopped
     command: ["python", "manage.py", "sync_loop"]
     env_file: .env
+    environment:
+      SOURCE_SYNC_INTERVAL: "1800"
     depends_on:
       web:
         condition: service_healthy
