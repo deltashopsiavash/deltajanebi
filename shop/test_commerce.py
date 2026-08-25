@@ -67,6 +67,27 @@ class CheckoutSettingsTests(TestCase):
     def setUp(self):
         self.settings = SiteSetting.load()
 
+    def _enable_card_payment(self):
+        self.settings.card_payment_enabled = True
+        self.settings.card_number = "6037991234567890"
+        self.settings.card_owner = "دلتا"
+        self.settings.zarinpal_payment_enabled = False
+        self.settings.save()
+
+    def _checkout_data(self, postal_code="1234567890"):
+        return {
+            "first_name": "سیاوش",
+            "last_name": "قادری",
+            "province": "آذربایجان شرقی",
+            "city": "تبریز",
+            "address": "تبریز، خیابان تست، پلاک ۱",
+            "postal_code": postal_code,
+            "phone": "09121234567",
+            "order_note": "",
+            "payment_method": "card",
+            "accept_terms": "1",
+        }
+
     def test_iran_locations_contains_all_provinces_and_cities(self):
         locations = province_city_map()
         self.assertGreaterEqual(len(locations), 31)
@@ -89,6 +110,34 @@ class CheckoutSettingsTests(TestCase):
         self.settings.save()
         form = CheckoutForm(settings=self.settings)
         self.assertEqual([x[0] for x in form.fields["payment_method"].choices], ["zarinpal"])
+
+    def test_postal_code_is_required_and_exactly_ten_digits(self):
+        self._enable_card_payment()
+        data = self._checkout_data(postal_code="12345")
+        form = CheckoutForm(data=data, settings=self.settings)
+        self.assertFalse(form.is_valid())
+        self.assertIn("postal_code", form.errors)
+
+    def test_postal_code_accepts_persian_digits_and_normalizes_them(self):
+        self._enable_card_payment()
+        form = CheckoutForm(data=self._checkout_data(postal_code="۱۲۳۴۵۶۷۸۹۰"), settings=self.settings)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["postal_code"], "1234567890")
+
+    def test_checkout_uses_custom_searchable_province_and_city_controls(self):
+        self._enable_card_payment()
+        user = User.objects.create_user(email="checkout@example.com", password="StrongPass123")
+        product = Product.objects.create(name="محصول پرداخت", price=100000, stock=2)
+        self.client.force_login(user)
+        session = self.client.session
+        session["cart"] = {str(product.id): 1}
+        session.save()
+        response = self.client.get(reverse("checkout"))
+        self.assertContains(response, 'id="province-trigger"')
+        self.assertContains(response, 'id="province-search"')
+        self.assertContains(response, 'id="city-trigger"')
+        self.assertContains(response, 'id="city-search"')
+        self.assertContains(response, "کد پستی")
 
     def test_terms_page_uses_managed_text(self):
         self.settings.terms_text = "قوانین اختصاصی دلتا"
