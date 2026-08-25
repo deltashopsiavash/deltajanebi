@@ -41,6 +41,7 @@ class CheckoutForm(forms.Form):
     province = forms.ChoiceField(label="استان", choices=())
     city = forms.CharField(label="شهر", max_length=80)
     address = forms.CharField(label="آدرس کامل", widget=forms.Textarea(attrs={"rows": 4, "autocomplete": "street-address"}))
+    postal_code = forms.CharField(label="کد پستی", max_length=10, min_length=10)
     phone = forms.CharField(label="شماره همراه", max_length=30, widget=forms.TextInput(attrs={"autocomplete": "tel", "inputmode": "tel"}))
     order_note = forms.CharField(label="یادداشت سفارش", required=False, widget=forms.Textarea(attrs={"rows": 3}))
     payment_method = forms.ChoiceField(label="روش پرداخت", choices=())
@@ -59,11 +60,22 @@ class CheckoutForm(forms.Form):
         if not methods:
             self.fields["payment_method"].choices = [("", "هیچ روش پرداختی فعال نیست")]
 
+    @staticmethod
+    def _latin_digits(value):
+        table = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+        return str(value or "").translate(table)
+
     def clean_phone(self):
-        phone = self.cleaned_data["phone"].strip().replace(" ", "").replace("-", "")
+        phone = self._latin_digits(self.cleaned_data["phone"]).strip().replace(" ", "").replace("-", "")
         if len(phone) < 10 or not phone.lstrip("+").isdigit():
             raise forms.ValidationError("شماره همراه معتبر نیست.")
         return phone
+
+    def clean_postal_code(self):
+        postal_code = self._latin_digits(self.cleaned_data["postal_code"]).strip().replace(" ", "").replace("-", "")
+        if len(postal_code) != 10 or not postal_code.isdigit():
+            raise forms.ValidationError("کد پستی باید دقیقاً ۱۰ رقم باشد.")
+        return postal_code
 
     def clean(self):
         cleaned = super().clean()
