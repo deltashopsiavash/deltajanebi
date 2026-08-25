@@ -34,6 +34,15 @@ docker run --rm \
   deltajanebi-app:latest \
   manage.py makemigrations --check --dry-run
 
+echo "==> بررسی ربات مدیریت"
+docker run --rm \
+  --entrypoint python \
+  -e DJANGO_SECRET_KEY=update-smoke-test-only \
+  -e DEBUG=0 \
+  -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
+  deltajanebi-app:latest \
+  manage.py shell -c 'from shop.management.commands import telegram_bot_v5 as b; assert b.main_menu().inline_keyboard; print("telegram_bot_v5: OK")'
+
 echo "==> اجرای تست‌های قبل از انتشار"
 docker run --rm \
   --entrypoint python \
