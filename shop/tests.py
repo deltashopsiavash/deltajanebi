@@ -79,7 +79,7 @@ class ProductManagementTests(TestCase):
 class StorefrontExperienceTests(TestCase):
     def setUp(self):
         self.leaf = sync_category_path(["جانبی موبایل", "کابل", "کابل شارژ موبایل"])
-        Product.objects.create(name="کابل B930", category=self.leaf, price=260000, stock=2)
+        self.product = Product.objects.create(name="کابل B930", category=self.leaf, price=260000, stock=2)
 
     def test_home_contains_mega_menu_and_auth_modal(self):
         response = self.client.get("/")
@@ -98,6 +98,8 @@ class StorefrontExperienceTests(TestCase):
         self.assertContains(response, "data-autoplay-ms=\"4500\"")
         self.assertContains(response, "data-banner-dot=\"1\"")
         self.assertNotContains(response, "خرید سریع، موجودی واقعی و قیمت به‌روز")
+        self.assertNotContains(response, "story-cats")
+        self.assertEqual(response.content.decode().count("دسته‌بندی محصولات"), 1)
 
     def test_mobile_call_buttons_and_zero_cart_badge_render(self):
         settings = SiteSetting.load()
@@ -107,6 +109,27 @@ class StorefrontExperienceTests(TestCase):
         self.assertContains(response, 'href="tel:+989121234567"')
         self.assertContains(response, "تماس با ما")
         self.assertContains(response, 'class="mnav-count">0</span>')
+
+    def test_global_footer_uses_dedicated_footer_phone_on_product_page(self):
+        settings = SiteSetting.load()
+        settings.address = "تهران، خیابان نمونه"
+        settings.footer_phone = "+982112345678"
+        settings.contact_email = "info@example.com"
+        settings.footer_description = "متن معرفی فروشگاه"
+        settings.save(update_fields=["address", "footer_phone", "contact_email", "footer_description"])
+        response = self.client.get(self.product.get_absolute_url())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "rich-footer")
+        self.assertContains(response, "تهران، خیابان نمونه")
+        self.assertContains(response, 'href="tel:+982112345678"')
+        self.assertContains(response, "متن معرفی فروشگاه")
+
+    def test_mobile_drawer_has_icons_and_nested_category_panel(self):
+        response = self.client.get("/")
+        self.assertContains(response, 'data-drawer-target="categories"')
+        self.assertContains(response, f'data-drawer-panel="root-{self.leaf.parent.parent_id}"')
+        self.assertContains(response, "drawer-row-main")
+        self.assertNotContains(response, "♙")
 
     def test_login_and_register_pages_render_modern_shell(self):
         login_response = self.client.get(reverse("login"))
@@ -148,6 +171,7 @@ class TelegramBotSmokeTests(TestCase):
 
         settings_labels = [button.text for row in telegram_bot_v3.settings_menu().inline_keyboard for button in row]
         self.assertIn("☎️ تلفن", settings_labels)
+        self.assertIn("📝 توضیحات و فوتر", settings_labels)
         self.assertEqual(telegram_bot_v3.normalize_phone("tel:+989121234567"), "+989121234567")
 
 
