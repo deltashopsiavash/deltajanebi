@@ -121,12 +121,10 @@ class Product(models.Model):
     markup_type = models.CharField(max_length=10, choices=MARKUP_CHOICES, default=MARKUP_PERCENT)
     markup_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    # Manual overrides are intentionally separate so automatic source sync does not erase admin choices.
     manual_name_override = models.CharField(max_length=300, blank=True)
     manual_price_override = models.PositiveBigIntegerField(null=True, blank=True)
     manual_stock_override = models.PositiveIntegerField(null=True, blank=True)
 
-    # Limited-time offer. When it expires, effective_price automatically falls back to price.
     sale_price = models.PositiveBigIntegerField(null=True, blank=True)
     sale_starts_at = models.DateTimeField(null=True, blank=True)
     sale_ends_at = models.DateTimeField(null=True, blank=True)
@@ -143,12 +141,18 @@ class Product(models.Model):
         return f"{self.public_code or '-'} | {self.name}"
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+
         if self.manual_name_override:
             self.name = self.manual_name_override
         if self.manual_price_override is not None:
             self.price = self.manual_price_override
         if self.manual_stock_override is not None:
-            self.stock = self.manual_stock_override
+            if update_fields and "stock" in update_fields and "manual_stock_override" not in update_fields:
+                self.manual_stock_override = self.stock
+                kwargs["update_fields"] = list(set(update_fields) | {"manual_stock_override"})
+            else:
+                self.stock = self.manual_stock_override
 
         if not self.slug:
             base = slugify(self.name, allow_unicode=True)[:280] or "product"
