@@ -8,7 +8,7 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   exit 1
 fi
 
-install_compose_fallback() {
+install_compose_binary() {
   local arch asset
   arch="$(uname -m)"
   case "$arch" in
@@ -16,8 +16,11 @@ install_compose_fallback() {
     aarch64|arm64) asset="aarch64" ;;
     *) echo "معماری ${arch} برای نصب خودکار Docker Compose پشتیبانی نشده است."; exit 1 ;;
   esac
+
+  echo "Docker Compose موجود نیست؛ نصب مستقیم Compose v2 از release رسمی Docker..."
   mkdir -p /usr/local/lib/docker/cli-plugins
-  curl -fL "https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-${asset}" \
+  curl --fail --location --retry 3 --retry-delay 2 \
+    "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${asset}" \
     -o /usr/local/lib/docker/cli-plugins/docker-compose
   chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 }
@@ -30,14 +33,10 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 systemctl enable --now docker
 
+# Ubuntu/Hetzner mirrors do not always expose docker-compose-plugin or docker-compose-v2.
+# Avoid distro package-name differences entirely and install the official CLI plugin binary.
 if ! docker compose version >/dev/null 2>&1; then
-  if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
-    apt-get install -y docker-compose-v2
-  elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
-    apt-get install -y docker-compose-plugin
-  else
-    install_compose_fallback
-  fi
+  install_compose_binary
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
