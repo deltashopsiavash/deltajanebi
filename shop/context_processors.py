@@ -23,12 +23,14 @@ def store_context(request):
             )[:12]
         )
 
-    badges = list(TrustBadge.objects.filter(is_active=True).order_by("badge_type")) if settings else []
+    enamad_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ENAMAD).first() if settings else None
+    zarinpal_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ZARINPAL).first() if settings else None
 
     return {
         "store_settings": settings,
         "nav_categories": nav_categories,
         "social_links": SocialLink.objects.filter(is_active=True)[:12] if settings else [],
-        "trust_badges": badges,
+        "enamad_badge": enamad_badge,
+        "zarinpal_badge": zarinpal_badge,
         "cart_count": sum(int(v) for v in cart.values()),
     }
