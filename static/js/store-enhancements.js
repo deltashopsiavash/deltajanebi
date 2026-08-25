@@ -1,6 +1,15 @@
 (function(){
   const THEME_KEY='delta-theme';
 
+  function ensureFinalStyles(){
+    if(document.getElementById('delta-dark-fixes'))return;
+    const link=document.createElement('link');
+    link.id='delta-dark-fixes';
+    link.rel='stylesheet';
+    link.href='/static/css/dark-fixes.css?v=2';
+    document.head.appendChild(link);
+  }
+
   function refreshThemeToggle(value){
     const btn=document.querySelector('.theme-mini-toggle');
     if(!btn)return;
@@ -18,6 +27,7 @@
     refreshThemeToggle(value);
   }
 
+  ensureFinalStyles();
   try{applyTheme(localStorage.getItem(THEME_KEY)==='dark'?'dark':'light')}catch(_){applyTheme('light')}
 
   function installThemeSwitcher(){
@@ -34,6 +44,8 @@
     refreshThemeToggle(document.documentElement.dataset.theme||'light');
   }
 
+  const emailIcon=`<span class="auth-field-icon auth-email-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"></rect><path d="m5 7 7 5.2L19 7"></path><path d="m5.5 17 4.7-4M18.5 17l-4.7-4"></path></svg></span>`;
+
   function installProgressiveAuth(){
     const overlay=document.getElementById('auth-overlay');
     if(!overlay)return;
@@ -47,7 +59,7 @@
         <div class="auth-progress-step active" data-auth-step="email">
           <div class="auth-heading"><h2>ورود یا ثبت‌نام</h2><p>برای ادامه فقط ایمیل خود را وارد کنید.</p></div>
           <form class="auth-modern-form" id="email-first-form" novalidate>
-            <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input id="auth-first-email" type="email" autocomplete="email" required></div></label>
+            <label><span class="auth-field-label">ایمیل</span><div class="auth-input">${emailIcon}<input id="auth-first-email" type="email" autocomplete="email" required aria-label="ایمیل"></div></label>
             <div class="auth-progress-error" id="auth-email-error"></div>
             <div class="auth-progress-loading" id="auth-email-loading">در حال بررسی ایمیل...</div>
             <button class="auth-primary" type="submit">ادامه</button>
@@ -129,6 +141,7 @@
   }
 
   document.addEventListener('DOMContentLoaded',function(){
+    ensureFinalStyles();
     installThemeSwitcher();
     installProgressiveAuth();
     document.querySelectorAll('input[type="email"]').forEach(input=>input.removeAttribute('placeholder'));
