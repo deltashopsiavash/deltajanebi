@@ -6,7 +6,6 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
 
-
 URL_MAX_LENGTH = 4096
 
 
@@ -39,13 +38,7 @@ class User(AbstractUser):
 
 
 class Category(models.Model):
-    parent = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
-        related_name="children",
-    )
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="children")
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, allow_unicode=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
@@ -70,9 +63,7 @@ class Category(models.Model):
         super().save(*args, **kwargs)
 
     def ancestor_chain(self):
-        chain = []
-        current = self
-        seen = set()
+        chain, seen, current = [], set(), self
         while current and current.pk not in seen:
             seen.add(current.pk)
             chain.append(current)
@@ -80,12 +71,9 @@ class Category(models.Model):
         return list(reversed(chain))
 
     def descendant_ids(self):
-        ids = [self.pk]
-        frontier = [self.pk]
+        ids, frontier = [self.pk], [self.pk]
         while frontier:
-            child_ids = list(
-                Category.objects.filter(parent_id__in=frontier, is_active=True).values_list("id", flat=True)
-            )
+            child_ids = list(Category.objects.filter(parent_id__in=frontier, is_active=True).values_list("id", flat=True))
             child_ids = [pk for pk in child_ids if pk not in ids]
             if not child_ids:
                 break
@@ -120,15 +108,12 @@ class Product(models.Model):
     source_product_code = models.CharField(max_length=100, blank=True)
     markup_type = models.CharField(max_length=10, choices=MARKUP_CHOICES, default=MARKUP_PERCENT)
     markup_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-
     manual_name_override = models.CharField(max_length=300, blank=True)
     manual_price_override = models.PositiveBigIntegerField(null=True, blank=True)
     manual_stock_override = models.PositiveIntegerField(null=True, blank=True)
-
     sale_price = models.PositiveBigIntegerField(null=True, blank=True)
     sale_starts_at = models.DateTimeField(null=True, blank=True)
     sale_ends_at = models.DateTimeField(null=True, blank=True)
-
     last_synced_at = models.DateTimeField(null=True, blank=True)
     sync_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -142,7 +127,6 @@ class Product(models.Model):
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get("update_fields")
-
         if self.manual_name_override:
             self.name = self.manual_name_override
         if self.manual_price_override is not None:
@@ -153,7 +137,6 @@ class Product(models.Model):
                 kwargs["update_fields"] = list(set(update_fields) | {"manual_stock_override"})
             else:
                 self.stock = self.manual_stock_override
-
         if not self.slug:
             base = slugify(self.name, allow_unicode=True)[:280] or "product"
             slug = base
@@ -162,18 +145,14 @@ class Product(models.Model):
                 slug = f"{base}-{i}"
                 i += 1
             self.slug = slug
-
         super().save(*args, **kwargs)
-
         if not self.public_code and self.pk:
             self.public_code = f"DJ-{self.pk:06d}"
             Product.objects.filter(pk=self.pk, public_code__isnull=True).update(public_code=self.public_code)
             Product.objects.filter(pk=self.pk, public_code="").update(public_code=self.public_code)
-
         image = self.primary_image
         if self.category_id and image:
-            current = self.category
-            seen = set()
+            current, seen = self.category, set()
             while current and current.pk not in seen:
                 seen.add(current.pk)
                 if not current.image_url:
@@ -244,6 +223,9 @@ class SiteSetting(models.Model):
     home_banner_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     shipping_cost = models.PositiveBigIntegerField(default=0)
     phone = models.CharField(max_length=30, blank=True)
+    address = models.TextField(blank=True)
+    contact_email = models.EmailField(blank=True)
+    footer_description = models.TextField(blank=True)
     card_number = models.CharField(max_length=32, blank=True)
     card_owner = models.CharField(max_length=120, blank=True)
     support_text = models.CharField(max_length=240, blank=True)
@@ -264,14 +246,7 @@ class SiteSetting(models.Model):
 
 
 class SocialLink(models.Model):
-    PLATFORM_CHOICES = [
-        ("instagram", "اینستاگرام"),
-        ("telegram", "تلگرام"),
-        ("whatsapp", "واتساپ"),
-        ("youtube", "یوتیوب"),
-        ("aparat", "آپارات"),
-        ("other", "سایر"),
-    ]
+    PLATFORM_CHOICES = [("instagram", "اینستاگرام"), ("telegram", "تلگرام"), ("whatsapp", "واتساپ"), ("youtube", "یوتیوب"), ("aparat", "آپارات"), ("x", "ایکس"), ("facebook", "فیسبوک"), ("other", "سایر")]
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, default="other")
     label = models.CharField(max_length=80)
     url = models.URLField(max_length=URL_MAX_LENGTH)
@@ -283,6 +258,28 @@ class SocialLink(models.Model):
 
     def __str__(self):
         return self.label
+
+
+class TrustBadge(models.Model):
+    ENAMAD, ZARINPAL = "enamad", "zarinpal"
+    TYPE_CHOICES = [(ENAMAD, "اینماد"), (ZARINPAL, "زرین‌پال")]
+    badge_type = models.CharField(max_length=20, choices=TYPE_CHOICES, unique=True)
+    image = models.ImageField(upload_to="site/trust/%Y/%m/", blank=True)
+    image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    target_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    @property
+    def image_src(self):
+        if self.image:
+            try:
+                return self.image.url
+            except ValueError:
+                pass
+        return self.image_url
+
+    def __str__(self):
+        return self.get_badge_type_display()
 
 
 class Banner(models.Model):
@@ -322,13 +319,7 @@ class Banner(models.Model):
 
 
 class Order(models.Model):
-    STATUS = [
-        ("receipt_pending", "در انتظار تایید رسید"),
-        ("preparing", "در حال آماده‌سازی"),
-        ("shipped", "ارسال شده"),
-        ("delivered", "تحویل شده"),
-        ("cancelled", "لغو شده"),
-    ]
+    STATUS = [("receipt_pending", "در انتظار تایید رسید"), ("preparing", "در حال آماده‌سازی"), ("shipped", "ارسال شده"), ("delivered", "تحویل شده"), ("cancelled", "لغو شده")]
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="orders")
     status = models.CharField(max_length=30, choices=STATUS, default="receipt_pending")
     full_name = models.CharField(max_length=160)
