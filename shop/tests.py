@@ -13,33 +13,19 @@ from .services.source_sync import (
 
 class UnicodeSlugTests(TestCase):
     def test_product_with_persian_slug_reverses_and_renders(self):
-        product = Product.objects.create(
-            name="کابل شارژ تایپ سی",
-            price=260000,
-            stock=1,
-            is_active=True,
-        )
+        product = Product.objects.create(name="کابل شارژ تایپ سی", price=260000, stock=1, is_active=True)
         url = reverse("product_detail", args=[product.slug])
         self.assertIn("/p/", url)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
     def test_home_renders_when_product_slug_is_persian(self):
-        Product.objects.create(
-            name="بند گردنی و کابل شارژر موبایل",
-            price=260000,
-            stock=1,
-            is_active=True,
-        )
+        Product.objects.create(name="بند گردنی و کابل شارژر موبایل", price=260000, stock=1, is_active=True)
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
 
     def test_category_with_persian_slug_reverses_and_renders(self):
-        category = Category.objects.create(
-            name="کابل و شارژر",
-            slug="کابل-و-شارژر",
-            is_active=True,
-        )
+        category = Category.objects.create(name="کابل و شارژر", slug="کابل-و-شارژر", is_active=True)
         url = reverse("category", args=[category.slug])
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
@@ -61,6 +47,37 @@ class CategoryHierarchyTests(TestCase):
         response = self.client.get(reverse("category", args=[root.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "کابل تست")
+
+    def test_product_image_seeds_empty_category_artwork(self):
+        leaf = sync_category_path(["جانبی موبایل", "کابل"])
+        Product.objects.create(name="کابل تصویردار", category=leaf, image_url="https://example.com/cable.jpg", price=100, stock=1)
+        leaf.refresh_from_db()
+        root = leaf.parent
+        root.refresh_from_db()
+        self.assertEqual(leaf.image_url, "https://example.com/cable.jpg")
+        self.assertEqual(root.image_url, "https://example.com/cable.jpg")
+
+
+class StorefrontExperienceTests(TestCase):
+    def setUp(self):
+        self.leaf = sync_category_path(["جانبی موبایل", "کابل", "کابل شارژ موبایل"])
+        Product.objects.create(name="کابل B930", category=self.leaf, price=260000, stock=2)
+
+    def test_home_contains_mega_menu_and_auth_modal(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "mega-menu")
+        self.assertContains(response, "ورود / ثبت‌نام")
+        self.assertContains(response, "کابل شارژ موبایل")
+        self.assertContains(response, "auth-overlay")
+
+    def test_login_and_register_pages_render_modern_shell(self):
+        login_response = self.client.get(reverse("login"))
+        register_response = self.client.get(reverse("register"))
+        self.assertEqual(login_response.status_code, 200)
+        self.assertEqual(register_response.status_code, 200)
+        self.assertContains(login_response, "auth-page-card")
+        self.assertContains(register_response, "auth-page-card")
 
 
 class SourceCleanupTests(TestCase):
