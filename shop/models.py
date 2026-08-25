@@ -289,6 +289,8 @@ class Banner(models.Model):
     title = models.CharField(max_length=160, blank=True)
     image = models.ImageField(upload_to="site/banners/%Y/%m/", blank=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    mobile_image = models.ImageField(upload_to="site/banners/mobile/%Y/%m/", blank=True)
+    mobile_image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     target_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     is_active = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=0)
@@ -305,6 +307,15 @@ class Banner(models.Model):
             except ValueError:
                 pass
         return self.image_url
+
+    @property
+    def mobile_image_src(self):
+        if self.mobile_image:
+            try:
+                return self.mobile_image.url
+            except ValueError:
+                pass
+        return self.mobile_image_url or self.image_src
 
     def __str__(self):
         return self.title or f"بنر #{self.pk}"
