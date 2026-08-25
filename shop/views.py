@@ -2,15 +2,15 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from .forms import AccountProfileForm, CheckoutForm, ReceiptUploadForm, RegisterForm
 from .iran_locations import province_city_map
-from .models import Banner, Category, DiscountCode, Order, OrderItem, Product, SiteSetting
-from .services.order_workflow import email_customer, mark_paid, order_report_text, release_order_stock
+from .models import Announcement, AnnouncementRead, Banner, Category, DiscountCode, Order, OrderItem, Product, SiteSetting
+from .services.order_workflow import email_customer, mark_paid, order_report_text, release_order_stock, reservation_deadline
 from .services.payments import PaymentError, request_zarinpal_payment, verify_zarinpal_payment
 from .services.telegram_notify import notify_admins, notify_admins_photo
 
@@ -20,18 +20,24 @@ def health(request):
     return JsonResponse({"ok": True})
 
 
+def _available_queryset(qs=None):
+    qs = qs if qs is not None else Product.objects.all()
+    return qs.filter(stock__gt=F("reserved_stock"))
+
+
 def _catalog_queryset():
     qs = Product.objects.filter(is_active=True).select_related("category")
     if SiteSetting.load().hide_out_of_stock:
-        qs = qs.filter(stock__gt=0)
+        qs = _available_queryset(qs)
     return qs
 
 
 def home(request):
-    offer_candidates = list(Product.objects.filter(is_active=True, stock__gt=0, sale_price__isnull=False).select_related("category").order_by("sale_ends_at")[:30])
+    available = _available_queryset(Product.objects.filter(is_active=True))
+    offer_candidates = list(available.filter(sale_price__isnull=False).select_related("category").order_by("sale_ends_at")[:30])
     offers = [product for product in offer_candidates if product.is_sale_active][:12]
     return render(request, "shop/home.html", {
-        "products": Product.objects.filter(is_active=True, stock__gt=0).select_related("category")[:10],
+        "products": available.select_related("category")[:10],
         "offers": offers,
         "categories": Category.objects.filter(is_active=True, parent__isnull=True)[:12],
         "banners": Banner.objects.filter(is_active=True).exclude(image="", image_url="")[:8],
@@ -55,7 +61,7 @@ def category(request, slug):
 def product_detail(request, slug):
     qs = Product.objects.select_related("category__parent").filter(is_active=True)
     if SiteSetting.load().hide_out_of_stock:
-        qs = qs.filter(stock__gt=0)
+        qs = _available_queryset(qs)
     product = get_object_or_404(qs, slug=slug)
     return render(request, "shop/product_detail.html", {"product": product, "breadcrumbs": product.category.ancestor_chain() if product.category else [], "gallery_images": product.gallery_images(), "feature_specs": list((product.specs or {}).items())[:3]})
 
@@ -81,6 +87,18 @@ def account_profile(request):
     return render(request, "shop/account_profile.html", {"form": form, "orders_count": request.user.orders.count(), "last_order": request.user.orders.first()})
 
 
+@login_required
+def notifications_mark_read(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False}, status=405)
+    ids = list(Announcement.objects.filter(is_active=True).values_list("id", flat=True)[:100])
+    AnnouncementRead.objects.bulk_create(
+        [AnnouncementRead(announcement_id=aid, user=request.user) for aid in ids],
+        ignore_conflicts=True,
+    )
+    return JsonResponse({"ok": True, "unread": 0})
+
+
 def _wants_json(request):
     return request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in request.headers.get("accept", "")
 
@@ -100,7 +118,7 @@ def _normalize_cart(request):
     clean = {}
     for pid, product in products.items():
         try:
-            qty = max(0, min(int(cart.get(str(pid), 0)), product.stock))
+            qty = max(0, min(int(cart.get(str(pid), 0)), product.available_stock))
         except (TypeError, ValueError):
             qty = 0
         if qty > 0:
@@ -150,7 +168,7 @@ def _cart_json(request):
         "discount_code": data["discount"].code if data["discount"] else "", "packaging": data["packaging"],
         "shipping": data["shipping"], "total": data["total"], "free_shipping": data["free_shipping"],
         "free_shipping_threshold": data["free_shipping_threshold"], "remaining_to_free_shipping": data["remaining_to_free_shipping"],
-        "lines": [{"id": l["product"].id, "name": l["product"].name, "code": l["product"].public_code or "", "image": l["product"].primary_image or "", "url": l["product"].get_absolute_url(), "qty": l["qty"], "stock": l["product"].stock, "unit_price": l["unit_price"], "total": l["total"]} for l in data["lines"]],
+        "lines": [{"id": l["product"].id, "name": l["product"].name, "code": l["product"].public_code or "", "image": l["product"].primary_image or "", "url": l["product"].get_absolute_url(), "qty": l["qty"], "stock": l["product"].available_stock, "unit_price": l["unit_price"], "total": l["total"]} for l in data["lines"]],
     }
 
 
@@ -158,14 +176,15 @@ def cart_add(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_active=True)
     if request.method != "POST":
         return redirect(product.get_absolute_url())
-    if product.stock <= 0:
+    available = product.available_stock
+    if available <= 0:
         if _wants_json(request):
-            return JsonResponse({"ok": False, "error": "این محصول ناموجود است."}, status=400)
-        messages.error(request, "این محصول ناموجود است.")
+            return JsonResponse({"ok": False, "error": "این محصول فعلاً موجودی آزاد ندارد."}, status=400)
+        messages.error(request, "این محصول فعلاً موجودی آزاد ندارد.")
         return redirect(request.POST.get("next") or product.get_absolute_url())
     cart = _cart(request)
     key = str(product.id)
-    cart[key] = min(product.stock, int(cart.get(key, 0)) + 1)
+    cart[key] = min(available, int(cart.get(key, 0)) + 1)
     request.session["cart"] = cart
     request.session.modified = True
     if _wants_json(request):
@@ -179,7 +198,7 @@ def cart_add(request, product_id):
 def cart_set(request, product_id):
     product = get_object_or_404(Product, pk=product_id, is_active=True)
     try:
-        qty = max(0, min(product.stock, int(request.POST.get("qty", 0))))
+        qty = max(0, min(product.available_stock, int(request.POST.get("qty", 0))))
     except (TypeError, ValueError):
         qty = 0
     cart = _cart(request)
@@ -232,8 +251,9 @@ def _reserve_order(request, form, totals):
         locked_lines, locked_subtotal = [], 0
         for line in totals["lines"]:
             product = Product.objects.select_for_update().get(pk=line["product"].pk)
-            if not product.is_active or product.stock < line["qty"]:
-                raise ValueError(f"موجودی «{product.name}» تغییر کرده است.")
+            available = max(0, product.stock - product.reserved_stock)
+            if not product.is_active or available < line["qty"]:
+                raise ValueError(f"موجودی آزاد «{product.name}» تغییر کرده است.")
             unit_price = product.effective_price
             locked_subtotal += unit_price * line["qty"]
             locked_lines.append((product, line["qty"], unit_price))
@@ -243,11 +263,18 @@ def _reserve_order(request, form, totals):
         packaging = settings.packaging_cost
         final_total = max(0, locked_subtotal - discount_amount) + shipping + packaging
         cd = form.cleaned_data
-        order = Order.objects.create(user=request.user, status="payment_pending", first_name=cd["first_name"], last_name=cd["last_name"], full_name=f"{cd['first_name']} {cd['last_name']}".strip(), phone=cd["phone"], province=cd["province"], city=cd["city"], address=cd["address"], postal_code=cd["postal_code"], order_note=cd.get("order_note", ""), subtotal=locked_subtotal, discount_code=discount.code if discount else "", discount_amount=discount_amount, packaging_cost=packaging, shipping_cost=shipping, total=final_total, payment_method=cd["payment_method"], payment_status=Order.PAY_PENDING)
+        order = Order.objects.create(
+            user=request.user, status="payment_pending", first_name=cd["first_name"], last_name=cd["last_name"],
+            full_name=f"{cd['first_name']} {cd['last_name']}".strip(), phone=cd["phone"], province=cd["province"], city=cd["city"],
+            address=cd["address"], postal_code=cd["postal_code"], order_note=cd.get("order_note", ""), subtotal=locked_subtotal,
+            discount_code=discount.code if discount else "", discount_amount=discount_amount, packaging_cost=packaging, shipping_cost=shipping,
+            total=final_total, payment_method=cd["payment_method"], payment_status=Order.PAY_PENDING,
+            reservation_expires_at=reservation_deadline(), stock_committed=False, reservation_released=False,
+        )
         for product, qty, unit_price in locked_lines:
             OrderItem.objects.create(order=order, product=product, title=product.name, price=unit_price, quantity=qty)
-            product.stock -= qty
-            product.save(update_fields=["stock"])
+            product.reserved_stock += qty
+            product.save(update_fields=["reserved_stock"])
         request.session["cart"] = {}
         request.session.pop("discount_code", None)
         request.session.modified = True
@@ -264,7 +291,7 @@ def _absolute(request, value):
 
 
 def _notify_invoice(request, order):
-    notify_admins(order_report_text(order, "🧾 فاکتور ساخته شد"))
+    notify_admins(order_report_text(order, "🧾 فاکتور ساخته شد — رزرو ۴۵ دقیقه‌ای"))
     for item in order.items.select_related("product").all():
         if item.product and item.product.primary_image:
             notify_admins_photo(_absolute(request, item.product.primary_image), f"📦 {item.title}\nکد: {item.product.public_code or '-'}\nتعداد: {item.quantity}\nسفارش: #{order.id}")
@@ -308,6 +335,9 @@ def card_payment(request, pk):
     order = get_object_or_404(request.user.orders.prefetch_related("items__product"), pk=pk, payment_method=Order.PAYMENT_CARD)
     if order.payment_status == Order.PAY_PAID:
         return redirect("account_order_detail", pk=order.pk)
+    if order.reservation_released or not order.reservation_active:
+        messages.error(request, "مهلت رزرو این فاکتور تمام شده است. یک سفارش جدید ثبت کنید.")
+        return redirect("account_order_detail", pk=order.pk)
     form = ReceiptUploadForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         order.receipt = form.cleaned_data["receipt"]
@@ -332,7 +362,7 @@ def zarinpal_callback(request):
     if not order:
         messages.error(request, "سفارش مربوط به این پرداخت پیدا نشد.")
         return redirect("home")
-    if order.payment_status == Order.PAY_PAID:
+    if order.payment_status == Order.PAY_PAID and order.status != "cancelled":
         messages.success(request, "این پرداخت قبلاً با موفقیت تایید شده است.")
         return redirect("account_order_detail", pk=order.pk)
     if status != "OK":
@@ -348,8 +378,17 @@ def zarinpal_callback(request):
         result = verify_zarinpal_payment(merchant_id=settings.zarinpal_merchant_id, amount_toman=order.total, authority=authority)
         order.zarinpal_ref_id = result["ref_id"]
         order.zarinpal_card_pan = result["card_pan"]
-        mark_paid(order)
         order.save(update_fields=["zarinpal_ref_id", "zarinpal_card_pan", "updated_at"])
+        try:
+            mark_paid(order)
+        except ValueError as exc:
+            order.payment_status = Order.PAY_PAID
+            order.status = "cancelled"
+            order.admin_note = ((order.admin_note or "") + f"\nپرداخت تایید شد ولی رزرو منقضی بود: {exc}").strip()
+            order.save(update_fields=["payment_status", "status", "admin_note", "updated_at"])
+            notify_admins(f"🚨 پرداخت زرین‌پال سفارش #{order.id} تایید شده ولی رزرو موجودی منقضی شده است. نیاز به بررسی/استرداد دستی.\nRefID: {order.zarinpal_ref_id}\n{exc}")
+            messages.error(request, "پرداخت ثبت شد اما رزرو موجودی منقضی شده بود. پشتیبانی سفارش را بررسی می‌کند.")
+            return redirect("account_order_detail", pk=order.pk)
         notify_admins(order_report_text(order, "✅ پرداخت زرین‌پال موفق"))
         email_customer(order, f"پرداخت سفارش #{order.id} موفق بود", f"پرداخت سفارش شما با شماره تراکنش {order.zarinpal_ref_id} با موفقیت تایید شد.")
         messages.success(request, f"پرداخت با موفقیت انجام شد. شماره تراکنش: {order.zarinpal_ref_id}")
