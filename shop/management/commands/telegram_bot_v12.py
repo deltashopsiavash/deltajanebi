@@ -18,6 +18,14 @@ from shop.models import User
 from shop.services.wallet import adjust_wallet, wallet_balance, wallet_history
 
 
+def main_menu():
+    return v11.main_menu()
+
+
+def settings_menu():
+    return v11.settings_menu()
+
+
 def _wallet_history_text(uid):
     rows = wallet_history(uid, 20)
     if not rows:
@@ -179,12 +187,12 @@ class Command(v10.Command):
             self.stderr.write("TELEGRAM_BOT_TOKEN is empty")
             return
 
-        old.main_menu = v11.main_menu
-        old.settings_menu = v11.settings_menu
-        v3.settings_menu = v11.settings_menu
-        v8.main_menu = v11.main_menu
-        v8.settings_menu = v11.settings_menu
-        v9.settings_menu = v11.settings_menu
+        old.main_menu = main_menu
+        old.settings_menu = settings_menu
+        v3.settings_menu = settings_menu
+        v8.main_menu = main_menu
+        v8.settings_menu = settings_menu
+        v9.settings_menu = settings_menu
         v4.show_categories = v5.show_categories
         v4.source_text = v7.source_text
         v4.source_actions = v7.source_actions
