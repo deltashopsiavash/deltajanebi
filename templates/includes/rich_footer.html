@@ -44,11 +44,13 @@
   </div>
 </footer>
 
-<div id="delta-feature-config" hidden data-top-text="{{ store_settings.top_bar_text|default:'خرید آنلاین • قیمت و موجودی به‌روز • ارسال مطمئن'|escape }}" data-unread="{{ unread_announcement_count|default:0 }}"></div>
-{% if user.is_authenticated %}
-<div class="notification-backdrop" id="notification-backdrop" aria-hidden="true"><aside class="notification-drawer"><div class="notification-head"><strong>🔔 اطلاعیه‌ها</strong><button class="notification-close" type="button" aria-label="بستن">×</button></div><div class="notification-list">{% for item in site_announcements %}<article class="notification-item"><p>{{ item.text|linebreaksbr }}</p><time>{{ item.created_at|date:'Y/m/d - H:i' }}</time></article>{% empty %}<div class="notification-empty">فعلاً اطلاعیه‌ای وجود ندارد.</div>{% endfor %}</div></aside></div>
-{% endif %}
+<div id="delta-feature-config" hidden
+     data-top-text="{{ store_settings.top_bar_text|default:'خرید آنلاین • قیمت و موجودی به‌روز • ارسال مطمئن'|escape }}"
+     data-auth="{% if user.is_authenticated %}1{% else %}0{% endif %}"
+     data-unread="{% if user.is_authenticated %}{{ unread_announcement_count|default:0 }}{% else %}{{ site_announcements|length }}{% endif %}"
+     data-latest-announcement="{% if site_announcements %}{{ site_announcements.0.id }}{% else %}0{% endif %}"></div>
+<div class="notification-backdrop" id="notification-backdrop" aria-hidden="true"><aside class="notification-drawer"><div class="notification-head"><strong>🔔 اطلاعیه‌ها</strong><button class="notification-close" type="button" aria-label="بستن">×</button></div><div class="notification-list">{% for item in site_announcements %}<article class="notification-item" data-announcement-id="{{ item.id }}"><p>{{ item.text|linebreaksbr }}</p><time>{{ item.created_at|date:'Y/m/d - H:i' }}</time></article>{% empty %}<div class="notification-empty">فعلاً اطلاعیه‌ای وجود ندارد.</div>{% endfor %}</div></aside></div>
 
 {% include 'includes/cart_ui.html' %}
 <script defer src="{% static 'js/store-enhancements.js' %}?v=6"></script>
-<script defer src="{% static 'js/feature-pack.js' %}?v=1"></script>
+<script defer src="{% static 'js/feature-pack.js' %}?v=2"></script>
