@@ -44,6 +44,39 @@
     refreshThemeToggle(document.documentElement.dataset.theme||'light');
   }
 
+  function installDrawerSubmenuHeader(){
+    const head=document.querySelector('.mobile-drawer-head');
+    const stage=document.querySelector('.mobile-drawer-stage');
+    const back=document.getElementById('mobile-drawer-back');
+    if(!head||!stage||!back)return;
+
+    let title=head.querySelector('.mobile-drawer-current-title');
+    if(!title){
+      title=document.createElement('div');
+      title.className='mobile-drawer-current-title';
+      head.appendChild(title);
+    }
+
+    back.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"></path></svg>';
+    back.setAttribute('aria-label','بازگشت');
+
+    const sync=()=>{
+      const active=stage.querySelector('.mobile-drawer-panel.active');
+      const panelName=active?.dataset.drawerPanel||'main';
+      const submenu=panelName!=='main';
+      head.classList.toggle('is-submenu',submenu);
+      title.textContent=submenu?(active?.dataset.title||''):'';
+    };
+
+    stage.querySelectorAll('.mobile-drawer-panel').forEach(panel=>{
+      new MutationObserver(sync).observe(panel,{attributes:true,attributeFilter:['class']});
+    });
+    document.querySelectorAll('[data-drawer-target],#mobile-drawer-back,#mobile-menu-open,#mobile-bottom-categories,#mobile-drawer-close').forEach(el=>{
+      el.addEventListener('click',()=>requestAnimationFrame(sync));
+    });
+    sync();
+  }
+
   const emailIcon=`<span class="auth-field-icon auth-email-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"></rect><path d="m5 7 7 5.2L19 7"></path><path d="m5.5 17 4.7-4M18.5 17l-4.7-4"></path></svg></span>`;
 
   function installProgressiveAuth(){
@@ -143,6 +176,7 @@
   document.addEventListener('DOMContentLoaded',function(){
     ensureFinalStyles();
     installThemeSwitcher();
+    installDrawerSubmenuHeader();
     installProgressiveAuth();
     document.querySelectorAll('input[type="email"]').forEach(input=>input.removeAttribute('placeholder'));
   });
