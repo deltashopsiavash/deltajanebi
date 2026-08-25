@@ -163,11 +163,13 @@ async def order_status_callback(update: Update, context):
     _, oid, status = q.data.split(":")
     order = await sync_to_async(Order.objects.select_related("user").get)(pk=int(oid))
 
-    if status != "cancelled" and order.payment_status != Order.PAY_PAID:
-        await q.edit_message_text(f"⛔ سفارش #{order.id} هنوز پرداخت/تایید نشده و نمی‌تواند وارد مرحله {dict(Order.STATUS).get(status, status)} شود.")
+    if status != "cancelled" and (order.payment_status != Order.PAY_PAID or not order.stock_committed):
+        await q.edit_message_text(
+            f"⛔ سفارش #{order.id} هنوز پرداخت نهایی و کسر موجودی نشده و نمی‌تواند وارد مرحله {dict(Order.STATUS).get(status, status)} شود."
+        )
         return
 
-    if status == "cancelled" and order.payment_status != Order.PAY_PAID and not order.reservation_released:
+    if status == "cancelled" and not order.stock_committed and not order.reservation_released:
         await sync_to_async(release_order_stock)(order)
         order.reservation_released = True
 
