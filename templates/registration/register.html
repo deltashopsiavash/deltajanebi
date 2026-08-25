@@ -9,9 +9,15 @@
       <p>یک حساب بساز و همه سفارش‌ها و پیگیری‌ها را یکجا داشته باش.</p>
     </aside>
     <section class="auth-form-panel">
-      <div class="auth-heading"><h2>ساخت حساب جدید</h2><p>ثبت‌نام سریع با ایمیل و شماره موبایل.</p></div>
+      <div class="auth-heading"><h2>ساخت حساب جدید</h2><p>مشخصات اصلی خود را وارد کنید.</p></div>
       {% if form.errors %}<div class="auth-errors">{% for field in form %}{% for error in field.errors %}<div>{{ field.label }}: {{ error }}</div>{% endfor %}{% endfor %}{% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}</div>{% endif %}
-      <form method="post" class="auth-modern-form">{% csrf_token %}<label><span>ایمیل</span><div class="auth-input"><i>✉</i><input type="email" name="email" value="{{ form.email.value|default:'' }}" required autocomplete="email" placeholder="example@email.com"></div></label><label><span>شماره موبایل</span><div class="auth-input"><i>☎</i><input type="tel" name="phone" value="{{ form.phone.value|default:'' }}" autocomplete="tel" placeholder="09xxxxxxxxx"></div></label><div class="auth-two-col"><label><span>رمز عبور</span><div class="auth-input"><input type="password" name="password1" required autocomplete="new-password" placeholder="رمز عبور"></div></label><label><span>تکرار رمز</span><div class="auth-input"><input type="password" name="password2" required autocomplete="new-password" placeholder="تکرار رمز"></div></label></div><label class="auth-check auth-terms"><input type="checkbox" checked required><span>قوانین و شرایط استفاده از فروشگاه را می‌پذیرم.</span></label><button class="auth-primary" type="submit">ایجاد حساب کاربری</button></form>
+      <form method="post" class="auth-modern-form">{% csrf_token %}
+        <div class="auth-name-row"><label><span>نام</span><div class="auth-input"><input type="text" name="first_name" value="{{ form.first_name.value|default:'' }}" required autocomplete="given-name" placeholder="نام"></div></label><label><span>نام خانوادگی</span><div class="auth-input"><input type="text" name="last_name" value="{{ form.last_name.value|default:'' }}" required autocomplete="family-name" placeholder="نام خانوادگی"></div></label></div>
+        <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input type="email" name="email" value="{{ form.email.value|default:'' }}" required autocomplete="email" placeholder="example@email.com"></div></label>
+        <div class="auth-two-col"><label><span>رمز عبور</span><div class="auth-input"><input type="password" name="password1" required autocomplete="new-password" placeholder="رمز عبور"></div></label><label><span>تکرار رمز</span><div class="auth-input"><input type="password" name="password2" required autocomplete="new-password" placeholder="تکرار رمز"></div></label></div>
+        <label class="auth-check auth-terms"><input type="checkbox" required><span>قوانین و شرایط استفاده از فروشگاه را می‌پذیرم.</span></label>
+        <button class="auth-primary" type="submit">ایجاد حساب کاربری</button>
+      </form>
       <div class="auth-switch-note">قبلاً حساب ساختی؟ <a href="{% url 'login' %}" style="color:var(--sf-blue);font-weight:900">ورود</a></div>
     </section>
   </div>
