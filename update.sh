@@ -34,14 +34,14 @@ docker run --rm \
   deltajanebi-app:latest \
   manage.py makemigrations --check --dry-run
 
-echo "==> بررسی ربات v10، پرداخت، شهرها و سبد خرید"
+echo "==> بررسی ربات v11، رزرو 45 دقیقه‌ای، پرداخت و اعلان‌ها"
 docker run --rm \
   --entrypoint python \
   -e DJANGO_SECRET_KEY=update-smoke-test-only \
   -e DEBUG=0 \
   -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
   deltajanebi-app:latest \
-  manage.py shell -c 'from shop.management.commands import telegram_bot_v10 as b; from shop.management.commands import sync_loop; from shop.services.payments import request_zarinpal_payment, verify_zarinpal_payment; from shop.iran_locations import province_city_map; from shop.models import DiscountCode, SiteSetting; from shop.templatetags.store_filters import money; assert b.v9.settings_menu().inline_keyboard; assert callable(request_zarinpal_payment) and callable(verify_zarinpal_payment); assert len(province_city_map())>=31; assert money(230000)=="230,000"; assert DiscountCode.PERCENT=="percent"; print("telegram_bot_v10 + checkout + ZarinPal + Iran locations: OK")'
+  manage.py shell -c 'from shop.management.commands import telegram_bot_v11 as b; from shop.management.commands import reservation_loop, sync_loop; from shop.services.order_workflow import expire_reservations, mark_paid; from shop.services.payments import request_zarinpal_payment, verify_zarinpal_payment; from shop.iran_locations import province_city_map; from shop.models import Announcement, DiscountCode, Product, SiteSetting, User; from shop.templatetags.store_filters import money; labels=[x.text for r in b.main_menu().inline_keyboard for x in r]; assert "👥 کاربران" in labels and "🔔 اطلاع‌رسانی" in labels; assert callable(expire_reservations) and callable(mark_paid); assert callable(request_zarinpal_payment) and callable(verify_zarinpal_payment); assert len(province_city_map())>=31; assert money(230000)=="230,000"; assert DiscountCode.PERCENT=="percent"; assert hasattr(Product,"reserved_stock") and hasattr(User,"customer_code"); print("telegram_bot_v11 + reservations + notifications + checkout: OK")'
 
 echo "==> اجرای تست‌های قبل از انتشار"
 docker run --rm \
@@ -66,7 +66,7 @@ for _ in $(seq 1 60); do
     break
   fi
   if [ "$status" = "unhealthy" ] || [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
-    docker compose logs --tail=160 web bot sync >&2 || true
+    docker compose logs --tail=160 web bot sync reservations >&2 || true
     exit 1
   fi
   sleep 2
@@ -76,7 +76,7 @@ done
 docker compose exec -T web python manage.py check --fail-level ERROR
 
 sleep 3
-for svc in db web bot sync caddy; do
+for svc in db web bot sync reservations caddy; do
   cid="$(docker compose ps -q --all "$svc")"
   [ -n "$cid" ] || { echo "خطا: کانتینر $svc پیدا نشد." >&2; exit 1; }
   running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"
