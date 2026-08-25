@@ -15,6 +15,7 @@ class ShopConfig(AppConfig):
             source_context,
             stable_sync_product,
         )
+        from shop import signals  # noqa: F401
 
         source_sync._allowed_url = allowed_url
         source_sync._source_brand_terms = source_brand_terms
