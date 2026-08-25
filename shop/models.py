@@ -246,8 +246,34 @@ class SiteSetting(models.Model):
         return obj
 
 
+class SourceSite(models.Model):
+    name = models.CharField(max_length=120)
+    base_url = models.URLField(max_length=URL_MAX_LENGTH)
+    hostname = models.CharField(max_length=255, unique=True, db_index=True)
+    brand_terms = models.CharField(max_length=500, blank=True, help_text="عبارت‌های برند برای پاک‌سازی متن، جداشده با کاما")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return f"{self.name} ({self.hostname})"
+
+
 class SocialLink(models.Model):
-    PLATFORM_CHOICES = [("instagram", "اینستاگرام"), ("telegram", "تلگرام"), ("whatsapp", "واتساپ"), ("youtube", "یوتیوب"), ("aparat", "آپارات"), ("x", "ایکس"), ("facebook", "فیسبوک"), ("other", "سایر")]
+    PLATFORM_CHOICES = [
+        ("instagram", "اینستاگرام"),
+        ("telegram", "تلگرام"),
+        ("whatsapp", "واتساپ"),
+        ("rubika", "روبیکا"),
+        ("eitaa", "ایتا"),
+        ("youtube", "یوتیوب"),
+        ("aparat", "آپارات"),
+        ("x", "ایکس"),
+        ("facebook", "فیسبوک"),
+        ("other", "سایر"),
+    ]
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, default="other")
     label = models.CharField(max_length=80)
     url = models.URLField(max_length=URL_MAX_LENGTH)
@@ -320,7 +346,13 @@ class Banner(models.Model):
 
 
 class Order(models.Model):
-    STATUS = [("receipt_pending", "در انتظار تایید رسید"), ("preparing", "در حال آماده‌سازی"), ("shipped", "ارسال شده"), ("delivered", "تحویل شده"), ("cancelled", "لغو شده")]
+    STATUS = [
+        ("receipt_pending", "در انتظار تایید رسید"),
+        ("preparing", "در حال آماده‌سازی"),
+        ("shipped", "ارسال شده"),
+        ("delivered", "تحویل شده"),
+        ("cancelled", "لغو شده"),
+    ]
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="orders")
     status = models.CharField(max_length=30, choices=STATUS, default="receipt_pending")
     full_name = models.CharField(max_length=160)
