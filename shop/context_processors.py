@@ -50,12 +50,8 @@ def store_context(request):
 
     announcements = list(Announcement.objects.filter(is_active=True)[:20]) if settings else []
     unread_announcement_count = 0
-    if getattr(request, "user", None) is not None and request.user.is_authenticated and announcements:
-        ids = [item.id for item in announcements]
-        read_ids = set(
-            AnnouncementRead.objects.filter(user=request.user, announcement_id__in=ids).values_list("announcement_id", flat=True)
-        )
-        unread_announcement_count = sum(1 for item in announcements if item.id not in read_ids)
+    if getattr(request, "user", None) is not None and request.user.is_authenticated:
+        unread_announcement_count = Announcement.objects.filter(is_active=True).exclude(reads__user=request.user).count()
 
     return {
         "store_settings": settings,
