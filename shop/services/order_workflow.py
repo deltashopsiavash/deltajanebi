@@ -87,7 +87,7 @@ def expire_reservations(limit=200):
             reservation_released=False,
             reservation_expires_at__isnull=False,
             reservation_expires_at__lte=now,
-            status__in=["payment_pending", "receipt_pending"],
+            status__in=["payment_pending", "receipt_pending", "cancelled", "payment_rejected"],
         ).values_list("id", flat=True)[:limit]
     )
     expired = []
@@ -96,7 +96,8 @@ def expire_reservations(limit=200):
             order = Order.objects.select_related("user").get(pk=oid)
             if not release_order_stock(order):
                 continue
-            order.payment_status = Order.PAY_FAILED
+            if order.payment_status != Order.PAY_PAID:
+                order.payment_status = Order.PAY_FAILED
             order.status = "cancelled"
             order.admin_note = ((order.admin_note or "") + "\n" + RESERVATION_EXPIRED_MARKER).strip()
             order.save(update_fields=["payment_status", "status", "admin_note", "updated_at"])
