@@ -149,10 +149,6 @@ class Product(models.Model):
                 kwargs["update_fields"] = list(set(update_fields) | {"manual_stock_override"})
             else:
                 self.stock = self.manual_stock_override
-        if self.reserved_stock > self.stock:
-            self.reserved_stock = self.stock
-            if update_fields:
-                kwargs["update_fields"] = list(set(kwargs["update_fields"]) | {"reserved_stock"})
         if not self.slug:
             base = slugify(self.name, allow_unicode=True)[:280] or "product"
             slug = base
