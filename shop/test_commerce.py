@@ -1,9 +1,13 @@
+from datetime import timedelta
+
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .forms import CheckoutForm
 from .iran_locations import province_city_map
-from .models import DiscountCode, Product, SiteSetting, User
+from .models import Announcement, DiscountCode, Order, OrderItem, Product, SiteSetting, User
+from .services.order_workflow import expire_reservations, mark_paid
 
 
 class CommerceStorefrontTests(TestCase):
@@ -61,6 +65,17 @@ class CommerceStorefrontTests(TestCase):
         self.assertContains(response, "ارسال این سفارش رایگان است")
         self.assertContains(response, "23,000")
         self.assertContains(response, "217,000")
+
+    def test_reserved_units_are_not_available_to_another_cart(self):
+        self.available.reserved_stock = 3
+        self.available.save(update_fields=["reserved_stock"])
+        response = self.client.post(
+            reverse("cart_set", args=[self.available.id]),
+            {"qty": 4},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.json()["lines"][0]["qty"], 1)
 
 
 class CheckoutSettingsTests(TestCase):
@@ -146,14 +161,111 @@ class CheckoutSettingsTests(TestCase):
         self.assertContains(response, "قوانین اختصاصی دلتا")
 
 
+class ReservationWorkflowTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="reserve@example.com", password="StrongPass123")
+        self.product = Product.objects.create(name="محصول رزروی", price=100000, stock=5)
+
+    def _order(self, qty=2, expired=False):
+        order = Order.objects.create(
+            user=self.user,
+            full_name="کاربر تست",
+            first_name="کاربر",
+            last_name="تست",
+            phone="09120000000",
+            province="تهران",
+            city="تهران",
+            address="آدرس تست",
+            subtotal=100000 * qty,
+            total=100000 * qty,
+            payment_method=Order.PAYMENT_CARD,
+            reservation_expires_at=timezone.now() + (timedelta(minutes=-1) if expired else timedelta(minutes=45)),
+        )
+        OrderItem.objects.create(order=order, product=self.product, title=self.product.name, price=100000, quantity=qty)
+        self.product.reserved_stock += qty
+        self.product.save(update_fields=["reserved_stock"])
+        return order
+
+    def test_reservation_does_not_reduce_physical_stock(self):
+        self._order(qty=2)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock, 5)
+        self.assertEqual(self.product.reserved_stock, 2)
+        self.assertEqual(self.product.available_stock, 3)
+
+    def test_confirmed_payment_commits_stock_once(self):
+        order = self._order(qty=2)
+        mark_paid(order)
+        self.product.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(self.product.stock, 3)
+        self.assertEqual(self.product.reserved_stock, 0)
+        self.assertTrue(order.stock_committed)
+        self.assertEqual(order.payment_status, Order.PAY_PAID)
+
+    def test_expired_reservation_releases_without_changing_stock(self):
+        order = self._order(qty=2, expired=True)
+        expired = expire_reservations()
+        self.product.refresh_from_db()
+        order.refresh_from_db()
+        self.assertIn(order.id, expired)
+        self.assertEqual(self.product.stock, 5)
+        self.assertEqual(self.product.reserved_stock, 0)
+        self.assertTrue(order.reservation_released)
+        self.assertEqual(order.status, "cancelled")
+
+    def test_source_stock_change_does_not_erase_reservation_counter(self):
+        self.product.reserved_stock = 3
+        self.product.save(update_fields=["reserved_stock"])
+        self.product.stock = 1
+        self.product.save(update_fields=["stock"])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.reserved_stock, 3)
+        self.assertEqual(self.product.available_stock, 0)
+
+
+class CustomerAndNotificationTests(TestCase):
+    def test_customer_code_is_generated_and_visible_in_account(self):
+        user = User.objects.create_user(email="customer@example.com", password="StrongPass123", first_name="دلتا")
+        self.assertEqual(user.customer_code, f"CU-{user.pk:07d}")
+        self.client.force_login(user)
+        response = self.client.get(reverse("account_profile"))
+        self.assertContains(response, user.customer_code)
+
+    def test_announcement_badge_is_unread_until_opened(self):
+        user = User.objects.create_user(email="notice@example.com", password="StrongPass123")
+        Announcement.objects.create(text="اطلاعیه تست")
+        self.client.force_login(user)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.context["unread_announcement_count"], 1)
+        self.assertContains(response, "اطلاعیه تست")
+        read = self.client.post(reverse("notifications_mark_read"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(read.status_code, 200)
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.context["unread_announcement_count"], 0)
+
+    def test_ajax_bad_password_returns_json_instead_of_rendering_login_page(self):
+        User.objects.create_user(email="login@example.com", password="CorrectPass123")
+        response = self.client.post(
+            reverse("auth_login_ajax"),
+            {"email": "login@example.com", "password": "wrong", "next": "/"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+
+
 class PaymentBotSmokeTests(TestCase):
-    def test_bot_v10_and_payment_menus_import(self):
-        from .management.commands import telegram_bot_v9, telegram_bot_v10
+    def test_bot_v11_and_payment_menus_import(self):
+        from .management.commands import telegram_bot_v9, telegram_bot_v10, telegram_bot_v11
         from .services.payments import request_zarinpal_payment, verify_zarinpal_payment
 
         site = SiteSetting.load()
-        labels = [button.text for row in telegram_bot_v9.settings_menu().inline_keyboard for button in row]
-        self.assertIn("💳 پرداخت، تخفیف و ارسال", labels)
+        labels = [button.text for row in telegram_bot_v11.main_menu().inline_keyboard for button in row]
+        self.assertIn("👥 کاربران", labels)
+        self.assertIn("🔔 اطلاع‌رسانی", labels)
+        settings_labels = [button.text for row in telegram_bot_v11.settings_menu().inline_keyboard for button in row]
+        self.assertIn("✨ متن بالا", settings_labels)
         commerce_labels = [button.text for row in telegram_bot_v9.commerce_menu(site).inline_keyboard for button in row]
         self.assertIn("🎟 کدهای تخفیف", commerce_labels)
         self.assertTrue(callable(telegram_bot_v10.show_commerce))
