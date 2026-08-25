@@ -1,0 +1,136 @@
+/* Final theme overrides: loaded last on purpose. */
+.theme-mini-toggle{width:32px!important;height:32px!important;border-radius:10px!important;font-size:16px!important;box-shadow:none!important}
+
+/* Auth field polish */
+.auth-progress-shell .auth-modern-form>label>span,
+.auth-modern-form>label>span.auth-field-label{font-size:14px!important;font-weight:900!important;line-height:1.7!important;color:#303947!important;margin:0 4px 8px!important;letter-spacing:-.15px}
+.auth-progress-shell .auth-input{height:54px!important;border-radius:15px!important;padding:0 14px!important;gap:11px!important}
+.auth-field-icon{width:31px;height:31px;flex:0 0 31px;border-radius:10px;display:grid;place-items:center;background:#edf5ff;color:#0878e8}
+.auth-field-icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.auth-progress-shell .auth-input input{font-size:14px!important;font-weight:650!important}
+
+html[data-theme="dark"] body{background:#0d1117!important;color:#eef2f7!important}
+html[data-theme="dark"] main{background:#0d1117!important;color:#eef2f7!important}
+
+/* Mobile drawer: every layer must be dark, not only the outer shell. */
+html[data-theme="dark"] .mobile-drawer,
+html[data-theme="dark"] .mobile-drawer-head,
+html[data-theme="dark"] .mobile-drawer-stage,
+html[data-theme="dark"] .mobile-drawer-panel{background:#151a21!important;color:#edf2f7!important;border-color:#2b323c!important}
+html[data-theme="dark"] .mobile-drawer-head{border-bottom-color:#2b323c!important}
+html[data-theme="dark"] .mobile-drawer-brand{color:#f3f6f9!important}
+html[data-theme="dark"] .mobile-drawer-links>a,
+html[data-theme="dark"] .mobile-drawer-links>button,
+html[data-theme="dark"] .category-level-links>a,
+html[data-theme="dark"] .category-level-links>button{background:#151a21!important;color:#eef2f7!important;border-bottom-color:#2c333d!important}
+html[data-theme="dark"] .mobile-drawer-links>a:active,
+html[data-theme="dark"] .mobile-drawer-links>button:active{background:#1b222b!important}
+html[data-theme="dark"] .drawer-row-main svg{stroke:#e7edf4!important}
+html[data-theme="dark"] .drawer-chevron{color:#b8c2ce!important}
+html[data-theme="dark"] .drawer-panel-title{background:#151a21!important;color:#fff!important;border-bottom-color:#2c333d!important}
+html[data-theme="dark"] .drawer-all-link{color:#69b5ff!important}
+html[data-theme="dark"] .mobile-drawer-close,
+html[data-theme="dark"] .mobile-drawer-back{background:#20262f!important;color:#eef3f8!important}
+html[data-theme="dark"] .theme-mini-toggle{background:#252b34!important;border-color:#39414c!important;color:#fff!important}
+
+/* Mobile header / bottom navigation */
+html[data-theme="dark"] .mobile-ui,
+html[data-theme="dark"] .mobile-head,
+html[data-theme="dark"] .mobile-tools,
+html[data-theme="dark"] .mobile-bottom-nav{background:#12171e!important;color:#edf2f7!important;border-color:#29313b!important}
+html[data-theme="dark"] .mobile-head-btn,
+html[data-theme="dark"] .mobile-tool-btn{background:#1b2129!important;color:#edf2f7!important;border-color:#303843!important}
+html[data-theme="dark"] .mobile-search-inline{background:#1b2129!important;color:#c9d2dc!important;border-color:#303843!important}
+html[data-theme="dark"] .mobile-search-inline span{color:#c9d2dc!important}
+html[data-theme="dark"] .mobile-bottom-nav a,
+html[data-theme="dark"] .mobile-bottom-nav button{color:#aab5c1!important}
+html[data-theme="dark"] .mobile-bottom-nav .active{color:#55aaff!important}
+html[data-theme="dark"] .mobile-bottom-nav .cart-center .mnav-icon{background:#1c222a!important;border-color:#3a4350!important;color:#f1f4f8!important}
+
+/* Product detail dark mode */
+html[data-theme="dark"] .pd-gallery-card,
+html[data-theme="dark"] .pd-buy-card,
+html[data-theme="dark"] .pd-shipping-card,
+html[data-theme="dark"] .pd-service-card,
+html[data-theme="dark"] .pd-feature-chips>div,
+html[data-theme="dark"] .pd-description,
+html[data-theme="dark"] .pd-spec-table,
+html[data-theme="dark"] .pd-spec-row,
+html[data-theme="dark"] .pd-main-image-wrap,
+html[data-theme="dark"] .pd-thumb{background:#171c23!important;color:#edf2f7!important;border-color:#303741!important;box-shadow:none!important}
+html[data-theme="dark"] .pd-main-image-wrap{background:#f5f5f5!important}
+html[data-theme="dark"] .pd-thumb{background:#f3f3f3!important}
+html[data-theme="dark"] .pd-spec-row b{background:#20262f!important;color:#edf2f7!important}
+html[data-theme="dark"] .pd-spec-row span,
+html[data-theme="dark"] .pd-description,
+html[data-theme="dark"] .pd-shipping-card p,
+html[data-theme="dark"] .pd-service-card p,
+html[data-theme="dark"] .pd-stock-row span,
+html[data-theme="dark"] .pd-stock-count,
+html[data-theme="dark"] .pd-price-label,
+html[data-theme="dark"] .pd-price span,
+html[data-theme="dark"] .pd-sku,
+html[data-theme="dark"] .pd-buy-notes{color:#aeb8c4!important}
+html[data-theme="dark"] .pd-info h1,
+html[data-theme="dark"] .pd-price strong,
+html[data-theme="dark"] .pd-feature-title,
+html[data-theme="dark"] .pd-feature-chips strong{color:#f5f7fa!important}
+html[data-theme="dark"] .pd-label{background:#232a33!important;color:#dce3eb!important}
+html[data-theme="dark"] .pd-section{border-color:#2d343e!important}
+html[data-theme="dark"] .pd-buy-divider{background:#303741!important}
+
+/* Cards, lists, cart, checkout and account */
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .card-body,
+html[data-theme="dark"] .cart-page-items,
+html[data-theme="dark"] .cart-summary-card,
+html[data-theme="dark"] .checkout-card,
+html[data-theme="dark"] .checkout-summary,
+html[data-theme="dark"] .payment-card-box,
+html[data-theme="dark"] .terms-card,
+html[data-theme="dark"] .statusbox,
+html[data-theme="dark"] .account-main-card,
+html[data-theme="dark"] .account-side-card,
+html[data-theme="dark"] .account-stat,
+html[data-theme="dark"] .last-order-box,
+html[data-theme="dark"] .empty{background:#171c23!important;color:#eef2f7!important;border-color:#303741!important}
+html[data-theme="dark"] .pic{background:#f2f2f2!important}
+html[data-theme="dark"] .summary,
+html[data-theme="dark"] .formbox{background:#171c23!important;color:#eef2f7!important;border-color:#303741!important}
+html[data-theme="dark"] .summary>div,
+html[data-theme="dark"] .cart-row,
+html[data-theme="dark"] .orders>a,
+html[data-theme="dark"] .orderline{border-color:#303741!important}
+
+/* Forms / authentication */
+html[data-theme="dark"] .auth-form-panel,
+html[data-theme="dark"] .auth-page-card{background:#171c23!important;color:#eef2f7!important}
+html[data-theme="dark"] .auth-heading h2{color:#f6f8fb!important}
+html[data-theme="dark"] .auth-heading p{color:#aeb8c4!important}
+html[data-theme="dark"] .auth-progress-shell .auth-modern-form>label>span,
+html[data-theme="dark"] .auth-modern-form>label>span.auth-field-label{color:#e9eef4!important}
+html[data-theme="dark"] .auth-input{background:#20262f!important;border-color:#39414c!important;color:#f3f6f9!important}
+html[data-theme="dark"] .auth-input:focus-within{background:#222a34!important;border-color:#4c92d8!important;box-shadow:0 0 0 4px rgba(58,144,229,.12)!important}
+html[data-theme="dark"] .auth-field-icon{background:#183450!important;color:#78beff!important}
+html[data-theme="dark"] .auth-email-preview{background:#20262f!important;border-color:#39414c!important;color:#eef2f7!important}
+
+/* Footer */
+html[data-theme="dark"] .rich-footer{background:#11161c!important;color:#e9eef4!important;border-color:#2b323c!important}
+html[data-theme="dark"] .footer-contact-line b,
+html[data-theme="dark"] .footer-social-area h3,
+html[data-theme="dark"] .footer-about h3{color:#eef2f7!important}
+html[data-theme="dark"] .footer-contact-line span,
+html[data-theme="dark"] .footer-contact-line a,
+html[data-theme="dark"] .footer-about p,
+html[data-theme="dark"] .footer-copy{color:#aeb8c4!important}
+html[data-theme="dark"] .footer-social-area,
+html[data-theme="dark"] .footer-copy{border-color:#2b323c!important}
+html[data-theme="dark"] .footer-social-icons a,
+html[data-theme="dark"] .trust-card{background:#1b2129!important;color:#edf2f7!important;border-color:#303843!important}
+
+@media(max-width:760px){
+  .auth-progress-shell .auth-modern-form>label>span{font-size:14px!important;margin-bottom:8px!important}
+  .auth-progress-shell .auth-input{height:55px!important}
+  .auth-field-icon{width:32px;height:32px;flex-basis:32px}
+  .auth-field-icon svg{width:22px;height:22px}
+}
