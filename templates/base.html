@@ -15,7 +15,7 @@
   <header class="store-header">
     <div class="store-header-inner">
       <a class="store-brand" href="/" aria-label="صفحه اصلی">
-        {% if store_settings.logo_url %}<img src="{{ store_settings.logo_url }}" alt="{{ store_settings.store_name }}">{% else %}<span class="store-brand-mark">D</span><span class="store-brand-name"><b>DELTA</b><small>جانبی</small></span>{% endif %}
+        {% if store_settings.logo_src %}<img src="{{ store_settings.logo_src }}" alt="{{ store_settings.store_name }}">{% else %}<span class="store-brand-mark">D</span><span class="store-brand-name"><b>DELTA</b><small>جانبی</small></span>{% endif %}
       </a>
 
       <form class="store-search" action="{% url 'search' %}">
@@ -84,7 +84,7 @@
       <button type="button" class="auth-close" id="auth-close" aria-label="بستن">×</button>
       <aside class="auth-brand-panel">
         <div class="auth-brand-orb"></div>
-        {% if store_settings.logo_url %}<img src="{{ store_settings.logo_url }}" class="auth-brand-logo" alt="">{% else %}<div class="auth-big-mark">D</div><div class="auth-big-name">DELTA <span>جانبی</span></div>{% endif %}
+        {% if store_settings.logo_src %}<img src="{{ store_settings.logo_src }}" class="auth-brand-logo" alt="">{% else %}<div class="auth-big-mark">D</div><div class="auth-big-name">DELTA <span>جانبی</span></div>{% endif %}
         <p>خرید راحت، سریع و مطمئن لوازم جانبی موبایل</p>
       </aside>
       <section class="auth-form-panel">
