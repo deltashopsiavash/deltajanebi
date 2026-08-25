@@ -1,17 +1,38 @@
 from django.test import TestCase
 
 from shop.management.commands import telegram_bot_v8
-from shop.models import Category, Product, SourceSite
+from shop.models import Category, Product, SiteSetting, SourceSite
 
 
 class V8StorefrontTests(TestCase):
-    def test_home_shows_unavailable_product_and_comma_price(self):
+    def test_home_latest_products_excludes_unavailable_products_and_formats_price(self):
         Product.objects.create(name="پاوربانک ناموجود", price=230000, stock=0, is_active=True)
+        Product.objects.create(name="پاوربانک موجود", price=230000, stock=2, is_active=True)
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "پاوربانک ناموجود")
+        self.assertNotContains(response, "پاوربانک ناموجود")
+        self.assertContains(response, "پاوربانک موجود")
+        self.assertContains(response, "230,000")
+
+    def test_catalog_shows_unavailable_when_hide_setting_is_off(self):
+        settings = SiteSetting.load()
+        settings.hide_out_of_stock = False
+        settings.save(update_fields=["hide_out_of_stock"])
+        Product.objects.create(name="کالای ناموجود تست", price=230000, stock=0, is_active=True)
+        response = self.client.get("/search/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "کالای ناموجود تست")
         self.assertContains(response, "ناموجود")
         self.assertContains(response, "230,000")
+
+    def test_catalog_hides_unavailable_when_hide_setting_is_on(self):
+        settings = SiteSetting.load()
+        settings.hide_out_of_stock = True
+        settings.save(update_fields=["hide_out_of_stock"])
+        Product.objects.create(name="کالای ناموجود مخفی", price=230000, stock=0, is_active=True)
+        response = self.client.get("/search/")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "کالای ناموجود مخفی")
 
     def test_home_newest_products_are_limited_to_ten_and_horizontal(self):
         for index in range(12):
