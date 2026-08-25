@@ -247,11 +247,19 @@ class SiteSetting(models.Model):
 
 
 class SourceSite(models.Model):
+    MARKUP_PERCENT, MARKUP_FIXED = "percent", "fixed"
+    MARKUP_CHOICES = [(MARKUP_PERCENT, "درصد"), (MARKUP_FIXED, "مبلغ ثابت")]
+
     name = models.CharField(max_length=120)
     base_url = models.URLField(max_length=URL_MAX_LENGTH)
     hostname = models.CharField(max_length=255, unique=True, db_index=True)
     brand_terms = models.CharField(max_length=500, blank=True, help_text="عبارت‌های برند برای پاک‌سازی متن، جداشده با کاما")
     is_active = models.BooleanField(default=True)
+    bulk_import_enabled = models.BooleanField(default=False, help_text="در همگام‌سازی همه، کل کاتالوگ قابل کشف این سایت وارد شود")
+    default_markup_type = models.CharField(max_length=10, choices=MARKUP_CHOICES, default=MARKUP_PERCENT)
+    default_markup_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    last_bulk_sync_at = models.DateTimeField(null=True, blank=True)
+    last_discovered_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -259,6 +267,10 @@ class SourceSite(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.hostname})"
+
+    def markup_label(self):
+        value = f"{self.default_markup_value:g}"
+        return f"{value}%" if self.default_markup_type == self.MARKUP_PERCENT else f"{value} تومان"
 
 
 class SocialLink(models.Model):
