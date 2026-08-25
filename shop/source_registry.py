@@ -6,6 +6,11 @@ from urllib.parse import urlparse
 from .models import SourceSite
 
 
+def canonical_hostname(value):
+    hostname = str(value or "").lower().strip().strip(".")
+    return hostname[4:] if hostname.startswith("www.") else hostname
+
+
 def normalize_site_url(value):
     text = str(value or "").strip()
     if not text:
@@ -15,11 +20,12 @@ def normalize_site_url(value):
     parsed = urlparse(text)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ValueError("آدرس سایت معتبر نیست.")
-    hostname = parsed.hostname.lower().strip(".")
+    original_hostname = parsed.hostname.lower().strip(".")
+    hostname = canonical_hostname(original_hostname)
+    _validate_public_host(original_hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
     base_url = f"{parsed.scheme}://{hostname}"
     if parsed.port:
         base_url += f":{parsed.port}"
-    _validate_public_host(hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
     return base_url, hostname
 
 
@@ -44,7 +50,7 @@ def registered_source_for_url(url, active_only=True):
     parsed = urlparse(str(url or ""))
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return None
-    hostname = parsed.hostname.lower().strip(".")
+    hostname = canonical_hostname(parsed.hostname)
     qs = SourceSite.objects.all()
     if active_only:
         qs = qs.filter(is_active=True)
@@ -55,19 +61,18 @@ def allowed_url(url):
     parsed = urlparse(str(url or ""))
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return False
-    hostname = parsed.hostname.lower().strip(".")
-    allowed = set(
-        SourceSite.objects.filter(is_active=True).values_list("hostname", flat=True)
-    )
+    original_hostname = parsed.hostname.lower().strip(".")
+    hostname = canonical_hostname(original_hostname)
+    allowed = {canonical_hostname(x) for x in SourceSite.objects.filter(is_active=True).values_list("hostname", flat=True)}
     allowed.update(
-        x.strip().lower().strip(".")
+        canonical_hostname(x)
         for x in os.getenv("SOURCE_ALLOWED_HOSTS", "hamrahedovom.ir,www.hamrahedovom.ir").split(",")
         if x.strip()
     )
     if hostname not in allowed:
         return False
     try:
-        _validate_public_host(hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+        _validate_public_host(original_hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
     except ValueError:
         return False
     return True
