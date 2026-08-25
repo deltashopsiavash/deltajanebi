@@ -2,6 +2,7 @@ import os
 
 from asgiref.sync import sync_to_async
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
@@ -17,19 +18,29 @@ from shop.source_registry import normalize_site_url
 def source_text(site):
     count = Product.objects.filter(source_type=Product.SYNCED, source_url__icontains=site.hostname).count()
     terms = site.brand_terms or "تنظیم نشده"
+    last_sync = timezone.localtime(site.last_bulk_sync_at).strftime("%Y/%m/%d %H:%M") if getattr(site, "last_bulk_sync_at", None) else "هنوز انجام نشده"
+    bulk = getattr(site, "bulk_import_enabled", False)
+    markup = site.markup_label() if hasattr(site, "markup_label") else "0%"
+    discovered = getattr(site, "last_discovered_count", 0)
     return (
         f"🌐 {site.name}\n"
         f"دامنه: {site.hostname}\n"
         f"آدرس پایه: {site.base_url}\n"
         f"وضعیت: {'✅ فعال' if site.is_active else '⛔ غیرفعال'}\n"
+        f"📥 آپلود همه: {'✅ روشن' if bulk else '⛔ خاموش'}\n"
+        f"💵 قیمت پیش‌فرض: {markup}\n"
         f"🧹 عبارت‌های حذف‌شونده: {terms}\n"
         f"🖼 پاکسازی تبلیغات عکس: ✅ خودکار\n"
+        f"🔎 آخرین تعداد کشف‌شده: {discovered}\n"
+        f"🕒 آخرین Bulk Sync: {last_sync}\n"
         f"محصول خاص مرتبط: {count}"
     )
 
 
 def source_actions(site):
+    bulk = getattr(site, "bulk_import_enabled", False)
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📥 آپلود همه: {'روشن' if bulk else 'خاموش'}", callback_data=f"source:bulk:{site.id}"), InlineKeyboardButton("💵 قیمت", callback_data=f"source:price:{site.id}")],
         [InlineKeyboardButton("✏️ تغییر نام", callback_data=f"source:name:{site.id}"), InlineKeyboardButton("🧹 عبارات پاکسازی", callback_data=f"source:terms:{site.id}")],
         [InlineKeyboardButton("⏯ فعال / غیرفعال", callback_data=f"source:toggle:{site.id}"), InlineKeyboardButton("🗑 حذف سایت", callback_data=f"source:delask:{site.id}")],
         [InlineKeyboardButton("⬅️ سایت‌های منبع", callback_data="source:list"), InlineKeyboardButton("🏠 منوی اصلی", callback_data="main")],
