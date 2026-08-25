@@ -28,6 +28,7 @@ def _wallet_history_text(uid):
         lines.append(
             f"• {sign}{row['amount']:,} تومان | موجودی: {row['balance_after']:,}\n"
             f"  دلیل: {row['reason'] or '-'}\n"
+            f"  مدیر: {row['admin_id'] or '-'}\n"
             f"  زمان: {row['created_at'].replace('T', ' ')}"
         )
     return "\n\n".join(lines)
@@ -45,6 +46,16 @@ def _user_keyboard(uid):
         [InlineKeyboardButton("📜 تراکنش‌های کیف پول", callback_data=f"wallet:history:{uid}")],
         [InlineKeyboardButton("⬅️ کاربران", callback_data="users:list:0"), InlineKeyboardButton("🏠 منوی اصلی", callback_data="main")],
     ])
+
+
+def _announcement_text_all():
+    from shop.models import Announcement
+    total = Announcement.objects.count()
+    active = Announcement.objects.filter(is_active=True).count()
+    return (
+        f"🔔 اطلاع‌رسانی سایت\n\nکل اطلاعیه‌ها: {total:,}\nفعال: {active:,}\n\n"
+        "هر اطلاعیه فعال در زنگوله برای همه نمایش داده می‌شود؛ چه کاربر وارد حساب شده باشد چه مهمان سایت باشد."
+    )
 
 
 async def _show_user(message, uid):
@@ -91,6 +102,12 @@ async def on_callback(update: Update, context):
         uid = int(data.rsplit(":", 1)[1])
         text = await sync_to_async(_wallet_history_text)(uid)
         await q.message.reply_text(text, reply_markup=_user_keyboard(uid))
+        return
+
+    if data == "announcement:add":
+        await q.answer()
+        old.set_state(context, "announcement_text")
+        await q.message.reply_text("متن اطلاعیه را کامل بفرست. بعد از ثبت، زنگوله برای همه بازدیدکننده‌ها (عضو و مهمان) آن را نمایش می‌دهد.")
         return
 
     await v11.on_callback(update, context)
@@ -174,6 +191,7 @@ class Command(v10.Command):
         v6.source_text = v7.source_text
         v6.source_actions = v7.source_actions
         v9._show_commerce = v10.show_commerce
+        v11._announcement_text = _announcement_text_all
 
         app = Application.builder().token(token).build()
         app.add_handler(CommandHandler("start", old.start))
