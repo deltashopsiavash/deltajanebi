@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Banner, Category, Product, SiteSetting, User
+from .models import Banner, Category, Product, SiteSetting, SocialLink, SourceSite, User
 from .services.source_sync import (
     _clean_source_description,
     _clean_source_name,
@@ -131,6 +131,13 @@ class StorefrontExperienceTests(TestCase):
         self.assertContains(response, "drawer-row-main")
         self.assertNotContains(response, "♙")
 
+    def test_rubika_and_eitaa_footer_icons_render(self):
+        SocialLink.objects.create(platform="rubika", label="روبیکا", url="https://rubika.ir/example")
+        SocialLink.objects.create(platform="eitaa", label="ایتا", url="https://eitaa.com/example")
+        response = self.client.get("/")
+        self.assertContains(response, 'aria-label="روبیکا"')
+        self.assertContains(response, 'aria-label="ایتا"')
+
     def test_login_and_register_pages_render_modern_shell(self):
         login_response = self.client.get(reverse("login"))
         register_response = self.client.get(reverse("register"))
@@ -159,7 +166,7 @@ class StorefrontExperienceTests(TestCase):
 
 class TelegramBotSmokeTests(TestCase):
     def test_management_command_module_imports_and_main_menu_builds(self):
-        from .management.commands import telegram_bot, telegram_bot_v3
+        from .management.commands import telegram_bot, telegram_bot_v3, telegram_bot_v4
 
         markup = telegram_bot.main_menu()
         self.assertIsNotNone(markup)
@@ -173,6 +180,21 @@ class TelegramBotSmokeTests(TestCase):
         self.assertIn("☎️ تلفن", settings_labels)
         self.assertIn("📝 توضیحات و فوتر", settings_labels)
         self.assertEqual(telegram_bot_v3.normalize_phone("tel:+989121234567"), "+989121234567")
+
+        v4_labels = [button.text for row in telegram_bot_v4.main_menu().inline_keyboard for button in row]
+        self.assertIn("🌐 سایت‌های منبع", v4_labels)
+        self.assertIn("📂 دسته‌بندی‌ها", v4_labels)
+
+    def test_social_choices_include_rubika_and_eitaa(self):
+        values = dict(SocialLink.PLATFORM_CHOICES)
+        self.assertEqual(values["rubika"], "روبیکا")
+        self.assertEqual(values["eitaa"], "ایتا")
+
+    def test_source_site_model_can_hold_multiple_domains(self):
+        one = SourceSite.objects.create(name="منبع یک", base_url="https://one.example", hostname="one.example")
+        two = SourceSite.objects.create(name="منبع دو", base_url="https://two.example", hostname="two.example")
+        self.assertNotEqual(one.hostname, two.hostname)
+        self.assertTrue(one.is_active)
 
 
 class SourceCleanupTests(TestCase):
