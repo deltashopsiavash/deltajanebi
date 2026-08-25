@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 
 
@@ -100,16 +101,18 @@ class Product(models.Model):
     MARKUP_CHOICES = [(MARKUP_PERCENT, "درصد"), (MARKUP_FIXED, "مبلغ ثابت")]
 
     category = models.ForeignKey(Category, null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
+    public_code = models.CharField(max_length=24, unique=True, blank=True, null=True, db_index=True)
     name = models.CharField(max_length=300)
     slug = models.SlugField(max_length=340, unique=True, allow_unicode=True, blank=True)
     sku = models.CharField(max_length=80, unique=True, blank=True, null=True)
     description = models.TextField(blank=True)
-    price = models.PositiveBigIntegerField(default=0, help_text="تومان")
+    price = models.PositiveBigIntegerField(default=0, help_text="قیمت پایه فروش به تومان")
     source_price = models.PositiveBigIntegerField(default=0, help_text="تومان")
     stock = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     image = models.ImageField(upload_to="products/%Y/%m/", blank=True)
     image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    manual_image_url_override = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     gallery = models.JSONField(default=list, blank=True)
     specs = models.JSONField(default=dict, blank=True)
     source_type = models.CharField(max_length=10, choices=SOURCE_CHOICES, default=MANUAL)
@@ -117,6 +120,17 @@ class Product(models.Model):
     source_product_code = models.CharField(max_length=100, blank=True)
     markup_type = models.CharField(max_length=10, choices=MARKUP_CHOICES, default=MARKUP_PERCENT)
     markup_value = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    # Manual overrides are intentionally separate so automatic source sync does not erase admin choices.
+    manual_name_override = models.CharField(max_length=300, blank=True)
+    manual_price_override = models.PositiveBigIntegerField(null=True, blank=True)
+    manual_stock_override = models.PositiveIntegerField(null=True, blank=True)
+
+    # Limited-time offer. When it expires, effective_price automatically falls back to price.
+    sale_price = models.PositiveBigIntegerField(null=True, blank=True)
+    sale_starts_at = models.DateTimeField(null=True, blank=True)
+    sale_ends_at = models.DateTimeField(null=True, blank=True)
+
     last_synced_at = models.DateTimeField(null=True, blank=True)
     sync_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -126,9 +140,16 @@ class Product(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return self.name
+        return f"{self.public_code or '-'} | {self.name}"
 
     def save(self, *args, **kwargs):
+        if self.manual_name_override:
+            self.name = self.manual_name_override
+        if self.manual_price_override is not None:
+            self.price = self.manual_price_override
+        if self.manual_stock_override is not None:
+            self.stock = self.manual_stock_override
+
         if not self.slug:
             base = slugify(self.name, allow_unicode=True)[:280] or "product"
             slug = base
@@ -137,7 +158,13 @@ class Product(models.Model):
                 slug = f"{base}-{i}"
                 i += 1
             self.slug = slug
+
         super().save(*args, **kwargs)
+
+        if not self.public_code and self.pk:
+            self.public_code = f"DJ-{self.pk:06d}"
+            Product.objects.filter(pk=self.pk, public_code__isnull=True).update(public_code=self.public_code)
+            Product.objects.filter(pk=self.pk, public_code="").update(public_code=self.public_code)
 
         image = self.primary_image
         if self.category_id and image:
@@ -157,7 +184,7 @@ class Product(models.Model):
                 return self.image.url
             except ValueError:
                 pass
-        return self.image_url
+        return self.manual_image_url_override or self.image_url
 
     def gallery_images(self):
         images = []
@@ -174,6 +201,33 @@ class Product(models.Model):
         else:
             value = base + self.markup_value
         return max(0, int(value.quantize(Decimal("1"))))
+
+    @property
+    def is_sale_active(self):
+        if self.sale_price is None or self.sale_price >= self.price:
+            return False
+        now = timezone.now()
+        if self.sale_starts_at and now < self.sale_starts_at:
+            return False
+        if self.sale_ends_at and now >= self.sale_ends_at:
+            return False
+        return True
+
+    @property
+    def effective_price(self):
+        return self.sale_price if self.is_sale_active else self.price
+
+    @property
+    def sale_remaining_seconds(self):
+        if not self.is_sale_active or not self.sale_ends_at:
+            return 0
+        return max(0, int((self.sale_ends_at - timezone.now()).total_seconds()))
+
+    def clear_sale(self):
+        self.sale_price = None
+        self.sale_starts_at = None
+        self.sale_ends_at = None
+        self.save(update_fields=["sale_price", "sale_starts_at", "sale_ends_at"])
 
     def get_absolute_url(self):
         return reverse("product_detail", args=[self.slug])
@@ -203,6 +257,53 @@ class SiteSetting(models.Model):
     def load(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class SocialLink(models.Model):
+    PLATFORM_CHOICES = [
+        ("instagram", "اینستاگرام"),
+        ("telegram", "تلگرام"),
+        ("whatsapp", "واتساپ"),
+        ("youtube", "یوتیوب"),
+        ("aparat", "آپارات"),
+        ("other", "سایر"),
+    ]
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, default="other")
+    label = models.CharField(max_length=80)
+    url = models.URLField(max_length=URL_MAX_LENGTH)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.label
+
+
+class Banner(models.Model):
+    title = models.CharField(max_length=160, blank=True)
+    image = models.ImageField(upload_to="site/banners/%Y/%m/", blank=True)
+    image_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    target_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "-id"]
+
+    @property
+    def image_src(self):
+        if self.image:
+            try:
+                return self.image.url
+            except ValueError:
+                pass
+        return self.image_url
+
+    def __str__(self):
+        return self.title or f"بنر #{self.pk}"
 
 
 class Order(models.Model):
