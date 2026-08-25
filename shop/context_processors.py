@@ -23,7 +23,7 @@ def store_context(request):
             )[:12]
         )
 
-    badges = {item.badge_type: item for item in TrustBadge.objects.filter(is_active=True)} if settings else {}
+    badges = list(TrustBadge.objects.filter(is_active=True).order_by("badge_type")) if settings else []
 
     return {
         "store_settings": settings,
