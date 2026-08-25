@@ -1,6 +1,6 @@
 from django.db.models import Prefetch
 
-from .models import Category, SiteSetting
+from .models import Category, SiteSetting, SocialLink
 
 
 def store_context(request):
@@ -26,5 +26,6 @@ def store_context(request):
     return {
         "store_settings": settings,
         "nav_categories": nav_categories,
+        "social_links": SocialLink.objects.filter(is_active=True)[:12] if settings else [],
         "cart_count": sum(int(v) for v in cart.values()),
     }
