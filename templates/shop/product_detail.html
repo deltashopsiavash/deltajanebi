@@ -11,10 +11,10 @@
 
   <div class="pd-grid">
     <aside class="pd-buy-card">
-      <div class="pd-ready"><span class="pd-ready-icon">✓</span><strong>آماده ارسال</strong></div>
+      <div class="pd-ready"><span class="pd-ready-icon">✓</span><strong>{% if product.available_stock %}آماده ارسال{% else %}ناموجود{% endif %}</strong></div>
       <div class="pd-buy-divider"></div>
-      <div class="pd-stock-row"><span>وضعیت کالا</span><b>{% if product.stock %}موجود در انبار{% else %}ناموجود{% endif %}</b></div>
-      {% if product.stock %}<div class="pd-stock-count">{{ product.stock }} عدد موجود</div>{% endif %}
+      <div class="pd-stock-row"><span>وضعیت کالا</span><b>{% if product.available_stock %}موجود در انبار{% else %}ناموجود{% endif %}</b></div>
+      {% if product.available_stock %}<div class="pd-stock-count">{{ product.available_stock }} عدد موجود</div>{% endif %}
       <div class="pd-buy-divider"></div>
       <div class="pd-price-label">قیمت فروش</div>
       {% if product.is_sale_active %}
@@ -26,7 +26,7 @@
       {% endif %}
       <form method="post" action="{% url 'cart_add' product.id %}" class="pd-add-form">
         {% csrf_token %}
-        <button class="pd-add-btn" {% if not product.stock %}disabled{% endif %}>{% if product.stock %}افزودن به سبد خرید{% else %}فعلاً ناموجود{% endif %}</button>
+        <button class="pd-add-btn" {% if not product.available_stock %}disabled{% endif %}>{% if product.available_stock %}افزودن به سبد خرید{% else %}فعلاً ناموجود{% endif %}</button>
       </form>
       <div class="pd-buy-notes"><div><span>✓</span> ضمانت سلامت فیزیکی</div><div><span>✓</span> ارسال سریع پس از تأیید سفارش</div><div><span>✓</span> پشتیبانی خرید</div></div>
     </aside>
