@@ -1,6 +1,25 @@
 from django.db import migrations, models
 
 
+def migrate_legacy_orders(apps, schema_editor):
+    Order = apps.get_model("shop", "Order")
+    for order in Order.objects.all().iterator():
+        parts = (order.full_name or "").strip().split(maxsplit=1)
+        order.first_name = parts[0] if parts else ""
+        order.last_name = parts[1] if len(parts) > 1 else ""
+        order.payment_method = "card"
+        if order.status == "receipt_pending":
+            order.payment_status = "receipt" if order.receipt else "pending"
+        elif order.status in ("preparing", "shipped", "delivered"):
+            order.payment_status = "paid"
+            order.paid_at = order.updated_at
+        elif order.status == "cancelled":
+            order.payment_status = "failed"
+        else:
+            order.payment_status = "pending"
+        order.save(update_fields=["first_name", "last_name", "payment_method", "payment_status", "paid_at"])
+
+
 class Migration(migrations.Migration):
     dependencies = [("shop", "0011_sourcesite_bulk_import_defaults")]
 
@@ -44,4 +63,5 @@ class Migration(migrations.Migration):
             name="status",
             field=models.CharField(choices=[("payment_pending", "در انتظار پرداخت"), ("receipt_pending", "در انتظار تایید رسید"), ("payment_rejected", "پرداخت رد شده"), ("preparing", "در حال آماده‌سازی"), ("shipped", "ارسال شده"), ("delivered", "تحویل شده"), ("cancelled", "لغو شده")], default="payment_pending", max_length=30),
         ),
+        migrations.RunPython(migrate_legacy_orders, migrations.RunPython.noop),
     ]
