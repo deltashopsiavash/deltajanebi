@@ -1,1 +1,26 @@
-{% extends 'base.html' %}{% block content %}<section class="auth"><h1>ورود به حساب</h1><form method="post" class="formbox">{% csrf_token %}{{ form.as_p }}<button class="btn wide">ورود</button><a href="{% url 'password_reset' %}">رمز را فراموش کرده‌اید؟</a></form></section>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}ورود | {{ store_settings.store_name }}{% endblock %}
+{% block content %}
+<section class="auth-page-shell">
+  <div class="auth-page-card">
+    <aside class="auth-brand-panel">
+      <div class="auth-brand-orb"></div>
+      {% if store_settings.logo_url %}<img src="{{ store_settings.logo_url }}" class="auth-brand-logo" alt="">{% else %}<div class="auth-big-mark">D</div><div class="auth-big-name">DELTA <span>جانبی</span></div>{% endif %}
+      <p>خرید راحت، سریع و مطمئن لوازم جانبی موبایل</p>
+    </aside>
+    <section class="auth-form-panel">
+      <div class="auth-heading"><h2>ورود به حساب کاربری</h2><p>برای مشاهده سفارش‌ها و ادامه خرید وارد حساب خودت شو.</p></div>
+      {% if form.errors %}<div class="auth-errors">ایمیل یا رمز عبور درست نیست. دوباره بررسی کن.</div>{% endif %}
+      <form method="post" class="auth-modern-form">
+        {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        <label><span>ایمیل</span><div class="auth-input"><i>✉</i><input type="email" name="username" value="{{ form.username.value|default:'' }}" required autocomplete="email" placeholder="example@email.com"></div></label>
+        <label><span>رمز عبور</span><div class="auth-input"><i>⌑</i><input type="password" name="password" required autocomplete="current-password" placeholder="رمز عبور"></div></label>
+        <div class="auth-form-row"><label class="auth-check"><input type="checkbox" checked><span>مرا به خاطر بسپار</span></label><a href="{% url 'password_reset' %}">رمز را فراموش کرده‌اید؟</a></div>
+        <button class="auth-primary" type="submit">ورود به فروشگاه</button>
+      </form>
+      <div class="auth-switch-note">حساب نداری؟ <a href="{% url 'register' %}" style="color:var(--sf-blue);font-weight:900">ساخت حساب جدید</a></div>
+    </section>
+  </div>
+</section>
+{% endblock %}
