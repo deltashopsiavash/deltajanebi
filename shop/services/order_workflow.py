@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from shop.models import Order, Product
+from shop.services.wallet import external_payable, order_wallet_info, refund_order_wallet
 
 RESERVATION_MINUTES = 45
 RESERVATION_EXPIRED_MARKER = "[reservation_expired]"
@@ -101,10 +102,11 @@ def expire_reservations(limit=200):
             order.status = "cancelled"
             order.admin_note = ((order.admin_note or "") + "\n" + RESERVATION_EXPIRED_MARKER).strip()
             order.save(update_fields=["payment_status", "status", "admin_note", "updated_at"])
+            refund_order_wallet(order, f"برگشت کیف پول سفارش #{order.id} به علت پایان مهلت رزرو")
             email_customer(
                 order,
                 f"لغو سفارش #{order.id}",
-                "مهلت ۴۵ دقیقه‌ای رزرو سفارش شما به پایان رسید و سفارش لغو شد. موجودی رزروشده آزاد شد.",
+                "مهلت ۴۵ دقیقه‌ای رزرو سفارش شما به پایان رسید و سفارش لغو شد. موجودی رزروشده و سهم کیف پول در صورت استفاده آزاد/برگشت داده شد.",
             )
             expired.append(order.id)
         except Order.DoesNotExist:
@@ -120,6 +122,18 @@ def order_products_text(order):
     return "\n".join(lines)
 
 
+def payment_method_label(order, wallet_info=None):
+    wallet_info = wallet_info or order_wallet_info(order.id)
+    wallet_amount = int(wallet_info.get("wallet_amount") or 0)
+    due = max(0, int(order.total or 0) - wallet_amount)
+    if wallet_amount and due == 0:
+        return "کیف پول"
+    base = order.get_payment_method_display()
+    if wallet_amount:
+        return f"ترکیبی: کیف پول + {base}"
+    return base
+
+
 def order_report_text(order, title="🧾 فاکتور جدید"):
     created = timezone.localtime(order.created_at).strftime("%Y/%m/%d - %H:%M:%S")
     paid = timezone.localtime(order.paid_at).strftime("%Y/%m/%d - %H:%M:%S") if order.paid_at else "-"
@@ -131,18 +145,35 @@ def order_report_text(order, title="🧾 فاکتور جدید"):
     if receipt_time:
         time_lines += f"زمان ارسال رسید: {receipt_time}\n"
     time_lines += f"زمان تایید پرداخت: {paid}"
+
+    wallet = order_wallet_info(order.id)
+    wallet_amount = int(wallet["wallet_amount"] or 0)
+    due = external_payable(order)
+    wallet_lines = ""
+    if wallet_amount:
+        wallet_lines = (
+            f"\n👛 سهم کیف پول: {wallet_amount:,} تومان\n"
+            f"موجودی کیف پول قبل: {wallet['balance_before']:,} تومان\n"
+            f"موجودی کیف پول بعد: {wallet['balance_after']:,} تومان\n"
+            f"سهم پرداخت بیرونی: {due:,} تومان"
+        )
+        if wallet["refunded"]:
+            wallet_lines += "\n↩️ سهم کیف پول این سفارش برگشت داده شده است"
+
     return (
         f"{title}\n"
         f"سفارش: #{order.id}\n"
         f"مشتری: {order.user.customer_code or '-'}\n"
-        f"روش پرداخت: {order.get_payment_method_display()}\n"
+        f"روش پرداخت: {payment_method_label(order, wallet)}\n"
         f"وضعیت پرداخت: {order.get_payment_status_display()}\n"
         f"مبلغ کالاها: {order.subtotal:,} تومان\n"
         f"تخفیف: {order.discount_amount:,} تومان"
         + (f" ({order.discount_code})" if order.discount_code else "")
         + f"\nبسته‌بندی: {order.packaging_cost:,} تومان\n"
         f"ارسال: {order.shipping_cost:,} تومان\n"
-        f"مبلغ نهایی: {order.total:,} تومان\n\n"
+        f"مبلغ نهایی سفارش: {order.total:,} تومان"
+        + wallet_lines
+        + "\n\n"
         f"👤 {order.first_name} {order.last_name}\n"
         f"📧 {order.user.email}\n"
         f"📞 {order.phone}\n"
