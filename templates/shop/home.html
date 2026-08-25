@@ -5,13 +5,11 @@
   {% if store_settings.home_banner_url %}<img src="{{ store_settings.home_banner_url }}" alt="">{% else %}<div class="hero-art">ACCESSORIES</div>{% endif %}
 </section>
 
-{% if banners %}
-<section class="wrap promo-strip" id="promo-strip"><div class="promo-track" id="promo-track">{% for banner in banners %}{% if banner.target_url %}<a class="promo-slide" href="{{ banner.target_url }}">{% else %}<div class="promo-slide">{% endif %}<img src="{{ banner.image_src }}" alt="{{ banner.title }}">{% if banner.title %}<span class="promo-slide-title">{{ banner.title }}</span>{% endif %}{% if banner.target_url %}</a>{% else %}</div>{% endif %}{% endfor %}</div></section>
-{% endif %}
+{% if banners %}<section class="wrap promo-strip" id="promo-strip"><div class="promo-track" id="promo-track">{% for banner in banners %}{% if banner.target_url %}<a class="promo-slide" href="{{ banner.target_url }}">{% else %}<div class="promo-slide">{% endif %}<img src="{{ banner.image_src }}" alt="{{ banner.title }}">{% if banner.title %}<span class="promo-slide-title">{{ banner.title }}</span>{% endif %}{% if banner.target_url %}</a>{% else %}</div>{% endif %}{% endfor %}</div></section>{% endif %}
 
-{% if categories %}
-<section class="wrap"><div class="home-category-head"><h2>دسته‌بندی محصولات</h2><p>سریع‌تر به چیزی که می‌خواهی برس</p></div><div class="category-orbits">{% for c in categories %}<a class="category-orbit" href="{% url 'category' c.slug %}"><span class="category-orbit-media">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span class="category-orbit-letter">{{ c.name|slice:':1' }}</span>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>
-{% endif %}
+{% if categories %}<section class="wrap"><div class="home-category-head"><h2>دسته‌بندی محصولات</h2><p>سریع‌تر به چیزی که می‌خواهی برس</p></div><div class="category-orbits">{% for c in categories %}<a class="category-orbit" href="{% url 'category' c.slug %}"><span class="category-orbit-media">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span class="category-orbit-letter">{{ c.name|slice:':1' }}</span>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>{% endif %}
+
+{% if offers %}<section class="wrap special-offers"><div class="section-head"><div><span class="sale-badge">زمان‌دار</span><h2>پیشنهادهای ویژه</h2></div><span class="special-offer-note">تا پایان تایمر با قیمت ویژه</span></div>{% with products=offers %}{% include 'shop/_grid.html' %}{% endwith %}</section>{% endif %}
 
 <section class="wrap" id="products"><div class="section-head"><h2>جدیدترین محصولات</h2><a href="{% url 'search' %}">مشاهده همه</a></div>{% include 'shop/_grid.html' %}</section>
 {% endblock %}
