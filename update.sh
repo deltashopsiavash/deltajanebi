@@ -12,16 +12,11 @@ EOF
   chmod 755 /usr/local/bin/deltajanebi-update
 }
 
-# Repair the global updater command even if an older installation stopped
-# before creating it.
 install_updater_command
 
 echo "==> دریافت نسخه جدید"
 git fetch origin main
 git reset --hard origin/main
-
-# The reset above may have replaced this file with a newer version; keep the
-# global command valid regardless of repository file mode.
 install_updater_command
 
 echo "==> بررسی تنظیمات"
@@ -29,6 +24,15 @@ docker compose config -q
 
 echo "==> ساخت image جدید"
 docker compose build --pull web
+
+echo "==> اجرای تست‌های قبل از انتشار"
+docker run --rm \
+  --entrypoint python \
+  -e DJANGO_SECRET_KEY=update-smoke-test-only \
+  -e DEBUG=0 \
+  -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
+  deltajanebi-app:latest \
+  manage.py test shop --verbosity 1
 
 echo "==> اعمال آپدیت"
 docker compose up -d --remove-orphans
@@ -53,6 +57,7 @@ done
 [ "$healthy" -eq 1 ] || { docker compose logs --tail=120 web >&2 || true; exit 1; }
 docker compose exec -T web python manage.py check --fail-level ERROR
 
+sleep 3
 for svc in db web bot sync caddy; do
   cid="$(docker compose ps -q --all "$svc")"
   [ -n "$cid" ] || { echo "خطا: کانتینر $svc پیدا نشد." >&2; exit 1; }
