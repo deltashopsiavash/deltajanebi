@@ -139,6 +139,19 @@ class Product(models.Model):
             self.slug = slug
         super().save(*args, **kwargs)
 
+        # Give newly-created category trees useful artwork automatically. We only
+        # fill empty category artwork, so a later custom category image is never overwritten.
+        image = self.primary_image
+        if self.category_id and image:
+            current = self.category
+            seen = set()
+            while current and current.pk not in seen:
+                seen.add(current.pk)
+                if not current.image_url:
+                    Category.objects.filter(pk=current.pk, image_url="").update(image_url=image)
+                    current.image_url = image
+                current = current.parent
+
     @property
     def primary_image(self):
         if self.image:
