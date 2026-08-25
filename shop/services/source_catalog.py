@@ -148,8 +148,6 @@ def discover_product_urls(site):
     if products:
         return products
 
-    # Generic fallback for sites without useful sitemaps. It follows listing/category/pagination pages,
-    # but only stores links that look like product details.
     page_queue = [
         site.base_url.rstrip("/") + "/",
         urljoin(site.base_url.rstrip("/") + "/", "shop/"),
@@ -218,10 +216,7 @@ def upsert_source_product(site, url):
     product = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
     created = product is None
 
-    category = None
-    if created:
-        category = sync_category_path(data.get("categories") or [])
-
+    category = sync_category_path(data.get("categories") or []) if created else None
     sku = str(data.get("sku") or "").strip() or None
     if sku and Product.objects.exclude(pk=product.pk if product else None).filter(sku=sku).exists():
         sku = None
@@ -267,3 +262,14 @@ def upsert_source_product(site, url):
 
 def source_products(site):
     return Product.objects.filter(source_type=Product.SYNCED, source_url__icontains=site.hostname)
+
+
+def apply_site_markup_to_existing(site):
+    updated = 0
+    for product in source_products(site).iterator(chunk_size=200):
+        product.markup_type = site.default_markup_type
+        product.markup_value = site.default_markup_value
+        product.price = _markup_price(product.source_price, site.default_markup_type, site.default_markup_value)
+        product.save(update_fields=["markup_type", "markup_value", "price"])
+        updated += 1
+    return updated
