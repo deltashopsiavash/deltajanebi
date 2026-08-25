@@ -222,6 +222,9 @@ class SiteSetting(models.Model):
     logo_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     home_banner_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     shipping_cost = models.PositiveBigIntegerField(default=0)
+    packaging_cost = models.PositiveBigIntegerField(default=0)
+    free_shipping_threshold = models.PositiveBigIntegerField(default=0, help_text="صفر یعنی غیرفعال")
+    hide_out_of_stock = models.BooleanField(default=False)
     phone = models.CharField(max_length=30, blank=True)
     footer_phone = models.CharField(max_length=30, blank=True)
     address = models.TextField(blank=True)
@@ -229,6 +232,10 @@ class SiteSetting(models.Model):
     footer_description = models.TextField(blank=True)
     card_number = models.CharField(max_length=32, blank=True)
     card_owner = models.CharField(max_length=120, blank=True)
+    card_payment_enabled = models.BooleanField(default=True)
+    zarinpal_payment_enabled = models.BooleanField(default=False)
+    zarinpal_merchant_id = models.CharField(max_length=64, blank=True)
+    terms_text = models.TextField(blank=True)
     support_text = models.CharField(max_length=240, blank=True)
 
     @property
@@ -239,6 +246,11 @@ class SiteSetting(models.Model):
             except ValueError:
                 pass
         return self.logo_url
+
+    def shipping_for(self, subtotal):
+        if self.free_shipping_threshold and subtotal >= self.free_shipping_threshold:
+            return 0
+        return self.shipping_cost
 
     @classmethod
     def load(cls):
@@ -357,26 +369,92 @@ class Banner(models.Model):
         return self.title or f"بنر #{self.pk}"
 
 
+class DiscountCode(models.Model):
+    PERCENT, FIXED = "percent", "fixed"
+    TYPE_CHOICES = [(PERCENT, "درصدی"), (FIXED, "مبلغ ثابت")]
+
+    code = models.CharField(max_length=60, unique=True, db_index=True)
+    discount_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default=PERCENT)
+    value = models.PositiveBigIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    starts_at = models.DateTimeField(null=True, blank=True)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        self.code = (self.code or "").strip().upper()
+        super().save(*args, **kwargs)
+
+    @property
+    def is_valid_now(self):
+        now = timezone.now()
+        if not self.is_active:
+            return False
+        if self.starts_at and now < self.starts_at:
+            return False
+        if self.ends_at and now >= self.ends_at:
+            return False
+        return True
+
+    def calculate(self, subtotal):
+        if not self.is_valid_now:
+            return 0
+        if self.discount_type == self.PERCENT:
+            return min(subtotal, int(Decimal(subtotal) * Decimal(self.value) / Decimal(100)))
+        return min(subtotal, int(self.value))
+
+    def __str__(self):
+        return self.code
+
+
 class Order(models.Model):
+    PAYMENT_CARD, PAYMENT_ZARINPAL = "card", "zarinpal"
+    PAYMENT_METHODS = [(PAYMENT_CARD, "کارت به کارت"), (PAYMENT_ZARINPAL, "درگاه زرین‌پال")]
+    PAY_PENDING, PAY_RECEIPT, PAY_PAID, PAY_REJECTED, PAY_FAILED = "pending", "receipt", "paid", "rejected", "failed"
+    PAYMENT_STATUS = [
+        (PAY_PENDING, "در انتظار پرداخت"),
+        (PAY_RECEIPT, "رسید ارسال شده"),
+        (PAY_PAID, "پرداخت موفق"),
+        (PAY_REJECTED, "پرداخت رد شده"),
+        (PAY_FAILED, "پرداخت ناموفق"),
+    ]
     STATUS = [
+        ("payment_pending", "در انتظار پرداخت"),
         ("receipt_pending", "در انتظار تایید رسید"),
+        ("payment_rejected", "پرداخت رد شده"),
         ("preparing", "در حال آماده‌سازی"),
         ("shipped", "ارسال شده"),
         ("delivered", "تحویل شده"),
         ("cancelled", "لغو شده"),
     ]
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="orders")
-    status = models.CharField(max_length=30, choices=STATUS, default="receipt_pending")
+    status = models.CharField(max_length=30, choices=STATUS, default="payment_pending")
+    first_name = models.CharField(max_length=80, blank=True)
+    last_name = models.CharField(max_length=80, blank=True)
     full_name = models.CharField(max_length=160)
     phone = models.CharField(max_length=30)
     province = models.CharField(max_length=80)
     city = models.CharField(max_length=80)
     address = models.TextField()
     postal_code = models.CharField(max_length=20, blank=True)
+    order_note = models.TextField(blank=True)
     subtotal = models.PositiveBigIntegerField(default=0)
+    discount_code = models.CharField(max_length=60, blank=True)
+    discount_amount = models.PositiveBigIntegerField(default=0)
+    packaging_cost = models.PositiveBigIntegerField(default=0)
     shipping_cost = models.PositiveBigIntegerField(default=0)
     total = models.PositiveBigIntegerField(default=0)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default=PAYMENT_CARD)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default=PAY_PENDING)
     receipt = models.ImageField(upload_to="receipts/%Y/%m/", blank=True)
+    receipt_rejection_reason = models.TextField(blank=True)
+    zarinpal_authority = models.CharField(max_length=80, blank=True, db_index=True)
+    zarinpal_ref_id = models.CharField(max_length=80, blank=True)
+    zarinpal_card_pan = models.CharField(max_length=40, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
     tracking_code = models.CharField(max_length=100, blank=True)
     admin_note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -384,6 +462,15 @@ class Order(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def payment_label(self):
+        return self.get_payment_method_display()
+
+    @property
+    def card_last4(self):
+        digits = "".join(ch for ch in (self.zarinpal_card_pan or "") if ch.isdigit())
+        return digits[-4:] if len(digits) >= 4 else ""
 
 
 class OrderItem(models.Model):
