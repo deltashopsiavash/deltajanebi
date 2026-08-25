@@ -4,14 +4,17 @@ from bs4 import BeautifulSoup
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from PIL import Image, ImageDraw
 
 from .models import Banner, Category, Product, SiteSetting, SocialLink, SourceSite, User
+from .services.source_sanitizer import _clean_studio_image, sanitize_scraped_text
 from .services.source_sync import (
     _clean_source_description,
     _clean_source_name,
     _extract_gallery,
     sync_category_path,
 )
+from .source_registry import source_context
 
 
 class UnicodeSlugTests(TestCase):
@@ -166,7 +169,7 @@ class StorefrontExperienceTests(TestCase):
 
 class TelegramBotSmokeTests(TestCase):
     def test_management_command_module_imports_and_main_menu_builds(self):
-        from .management.commands import telegram_bot, telegram_bot_v3, telegram_bot_v4
+        from .management.commands import telegram_bot, telegram_bot_v3, telegram_bot_v4, telegram_bot_v5, telegram_bot_v6
 
         markup = telegram_bot.main_menu()
         self.assertIsNotNone(markup)
@@ -184,6 +187,9 @@ class TelegramBotSmokeTests(TestCase):
         v4_labels = [button.text for row in telegram_bot_v4.main_menu().inline_keyboard for button in row]
         self.assertIn("🌐 سایت‌های منبع", v4_labels)
         self.assertIn("📂 دسته‌بندی‌ها", v4_labels)
+        v5_labels = [button.text for row in telegram_bot_v5.main_menu().inline_keyboard for button in row]
+        self.assertIn("🌐 ثبت سایت", v5_labels)
+        self.assertTrue(callable(telegram_bot_v6.source_actions))
 
     def test_social_choices_include_rubika_and_eitaa(self):
         values = dict(SocialLink.PLATFORM_CHOICES)
@@ -198,14 +204,52 @@ class TelegramBotSmokeTests(TestCase):
 
 
 class SourceCleanupTests(TestCase):
-    def test_source_store_name_is_removed_from_product_copy(self):
-        title = _clean_source_name("کابل شارژ B930 - خرید لوازم جانبی از فروشگاه همراه دوم")
-        description = _clean_source_description(
-            "کابل مقاوم و مناسب شارژ سریع. خرید این محصول از فروشگاه همراه دوم. دارای کانکتور Type-C."
+    def setUp(self):
+        self.hamrah, _ = SourceSite.objects.update_or_create(
+            hostname="hamrahedovom.ir",
+            defaults={
+                "name": "همراه دوم",
+                "base_url": "https://hamrahedovom.ir",
+                "brand_terms": "همراه دوم,HAMRAHEDOVOM",
+                "is_active": True,
+            },
         )
+
+    def test_source_store_name_is_removed_from_product_copy(self):
+        with source_context("https://hamrahedovom.ir/Product/BKP-1/"):
+            title = _clean_source_name("کابل شارژ B930 - خرید لوازم جانبی از فروشگاه همراه دوم")
+            description = _clean_source_description(
+                "کابل مقاوم و مناسب شارژ سریع. خرید این محصول از فروشگاه همراه دوم. دارای کانکتور Type-C."
+            )
         self.assertNotIn("همراه دوم", title)
         self.assertNotIn("همراه دوم", description)
         self.assertIn("کابل مقاوم", description)
+
+    def test_cleanup_terms_are_scoped_to_each_source(self):
+        SourceSite.objects.create(
+            name="سایت دوم",
+            base_url="https://second.example",
+            hostname="second.example",
+            brand_terms="مریوان فون",
+        )
+        with source_context("https://hamrahedovom.ir/Product/1/"):
+            self.assertIn("مریوان فون", _clean_source_name("کابل مریوان فون"))
+        with source_context("https://second.example/product/1"):
+            self.assertNotIn("مریوان فون", _clean_source_name("کابل مریوان فون"))
+
+    def test_sanitizer_removes_source_phrase_from_all_product_text_fields(self):
+        data = {
+            "name": "کابل همراه دوم مدل X",
+            "description": "خرید کابل همراه دوم با کیفیت عالی",
+            "specs": {"فروشنده": "همراه دوم", "رنگ": "مشکی همراه دوم"},
+            "categories": ["جانبی همراه دوم", "کابل"],
+        }
+        cleaned = sanitize_scraped_text(data, "https://hamrahedovom.ir/Product/1/")
+        self.assertNotIn("همراه دوم", cleaned["name"])
+        self.assertNotIn("همراه دوم", cleaned["description"])
+        self.assertNotIn("همراه دوم", " ".join(cleaned["specs"].keys()))
+        self.assertNotIn("همراه دوم", " ".join(cleaned["specs"].values()))
+        self.assertNotIn("همراه دوم", " ".join(cleaned["categories"]))
 
     def test_gallery_ignores_logo_and_keeps_product_image(self):
         soup = BeautifulSoup(
@@ -217,5 +261,18 @@ class SourceCleanupTests(TestCase):
             """,
             "lxml",
         )
-        gallery = _extract_gallery(soup, "https://hamrahedovom.ir/Product/BKP-1/", "")
+        with source_context("https://hamrahedovom.ir/Product/BKP-1/"):
+            gallery = _extract_gallery(soup, "https://hamrahedovom.ir/Product/BKP-1/", "")
         self.assertEqual(gallery, ["https://hamrahedovom.ir/media/products/b930-main.jpg"])
+
+    def test_studio_image_cleaner_removes_outer_ad_frame_conservatively(self):
+        image = Image.new("RGB", (700, 700), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((5, 5, 695, 695), outline=(0, 170, 235), width=9)
+        draw.rectangle((80, 25, 280, 70), fill=(20, 80, 140))
+        draw.rectangle((355, 135, 585, 590), fill=(215, 220, 225))
+        draw.rectangle((105, 280, 300, 585), fill=(25, 25, 28))
+        cleaned = _clean_studio_image(image)
+        self.assertIsNotNone(cleaned)
+        self.assertLess(cleaned.width, 700)
+        self.assertEqual(cleaned.width, cleaned.height)
