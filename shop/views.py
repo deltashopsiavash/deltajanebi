@@ -6,13 +6,12 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import CheckoutForm, RegisterForm
-from .models import Category, Order, OrderItem, Product, SiteSetting
+from .forms import AccountProfileForm, CheckoutForm, RegisterForm
+from .models import Banner, Category, Order, OrderItem, Product, SiteSetting
 from .services.telegram_notify import notify_admins
 
 
 def health(request):
-    # Touch the DB so container health catches schema/database failures too.
     Product.objects.only("id").first()
     return JsonResponse({"ok": True})
 
@@ -24,6 +23,7 @@ def home(request):
         {
             "products": Product.objects.filter(is_active=True, stock__gt=0).select_related("category")[:24],
             "categories": Category.objects.filter(is_active=True, parent__isnull=True)[:12],
+            "banners": Banner.objects.filter(is_active=True).exclude(image="", image_url="")[:8],
         },
     )
 
@@ -32,7 +32,12 @@ def search(request):
     q = request.GET.get("q", "").strip()
     qs = Product.objects.filter(is_active=True).select_related("category")
     if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(sku__icontains=q) | Q(description__icontains=q))
+        qs = qs.filter(
+            Q(name__icontains=q)
+            | Q(public_code__iexact=q)
+            | Q(sku__icontains=q)
+            | Q(description__icontains=q)
+        )
     return render(
         request,
         "shop/list.html",
@@ -75,13 +80,31 @@ def product_detail(request, slug):
 
 def register(request):
     if request.user.is_authenticated:
-        return redirect("home")
+        return redirect("account_profile")
     form = RegisterForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
         login(request, user)
-        return redirect("home")
+        return redirect("account_profile")
     return render(request, "registration/register.html", {"form": form})
+
+
+@login_required
+def account_profile(request):
+    form = AccountProfileForm(request.POST or None, instance=request.user)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "مشخصات حساب کاربری با موفقیت ذخیره شد.")
+        return redirect("account_profile")
+    return render(
+        request,
+        "shop/account_profile.html",
+        {
+            "form": form,
+            "orders_count": request.user.orders.count(),
+            "last_order": request.user.orders.first(),
+        },
+    )
 
 
 def _cart(request):
@@ -121,9 +144,10 @@ def _cart_lines(request):
     subtotal = 0
     for product in products:
         qty = min(int(cart.get(str(product.id), 0)), product.stock)
-        total = product.price * qty
+        unit_price = product.effective_price
+        total = unit_price * qty
         subtotal += total
-        lines.append({"product": product, "qty": qty, "total": total})
+        lines.append({"product": product, "qty": qty, "unit_price": unit_price, "total": total})
     return lines, subtotal
 
 
@@ -147,21 +171,24 @@ def checkout(request):
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             locked = []
+            locked_subtotal = 0
             for line in lines:
                 product = Product.objects.select_for_update().get(pk=line["product"].pk)
                 if product.stock < line["qty"]:
                     messages.error(request, f"موجودی {product.name} تغییر کرده است.")
                     return redirect("cart")
-                locked.append((product, line["qty"]))
+                unit_price = product.effective_price
+                locked_subtotal += unit_price * line["qty"]
+                locked.append((product, line["qty"], unit_price))
             order = Order.objects.create(
                 user=request.user,
-                subtotal=subtotal,
+                subtotal=locked_subtotal,
                 shipping_cost=settings.shipping_cost,
-                total=subtotal + settings.shipping_cost,
+                total=locked_subtotal + settings.shipping_cost,
                 **form.cleaned_data,
             )
-            for product, qty in locked:
-                OrderItem.objects.create(order=order, product=product, title=product.name, price=product.price, quantity=qty)
+            for product, qty, unit_price in locked:
+                OrderItem.objects.create(order=order, product=product, title=product.name, price=unit_price, quantity=qty)
                 product.stock -= qty
                 product.save(update_fields=["stock"])
             request.session["cart"] = {}
