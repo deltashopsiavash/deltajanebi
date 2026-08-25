@@ -25,6 +25,15 @@ docker compose config -q
 echo "==> ساخت image جدید"
 docker compose build --pull web
 
+echo "==> بررسی migrationها"
+docker run --rm \
+  --entrypoint python \
+  -e DJANGO_SECRET_KEY=update-smoke-test-only \
+  -e DEBUG=0 \
+  -e ALLOWED_HOSTS=testserver,localhost,127.0.0.1 \
+  deltajanebi-app:latest \
+  manage.py makemigrations --check --dry-run
+
 echo "==> اجرای تست‌های قبل از انتشار"
 docker run --rm \
   --entrypoint python \
