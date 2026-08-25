@@ -60,8 +60,8 @@ install_docker_official() {
     return 0
   fi
 
-  # Remove distro packages only when the complete official Docker stack is not already available.
-  apt-get remove -y docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc >/dev/null 2>&1 || true
+  # Remove packages that conflict with Docker CE, following Docker's Ubuntu install guidance.
+  apt-get remove -y docker.io docker-doc docker-compose docker-compose-v2 docker-buildx podman-docker containerd runc >/dev/null 2>&1 || true
 
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL --retry 3 --retry-delay 2 https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -71,8 +71,15 @@ install_docker_official() {
   local codename="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
   [ -n "$codename" ] || fail "نسخه Ubuntu قابل تشخیص نیست."
 
-  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu %s stable\n' \
-    "$(dpkg --print-architecture)" "$codename" > /etc/apt/sources.list.d/docker.list
+  cat > /etc/apt/sources.list.d/docker.sources <<SOURCEEOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: ${codename}
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+SOURCEEOF
+  rm -f /etc/apt/sources.list.d/docker.list
 
   apt-get update -y
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -122,6 +129,7 @@ if [ ! -f .env ]; then
   prompt_optional EMAIL_USER "ایمیل ارسال بازیابی رمز (اختیاری، Enter برای رد شدن): "
   if [ -n "$EMAIL_USER" ]; then
     prompt_secret_optional EMAIL_PASS "App Password ایمیل: "
+    EMAIL_PASS="${EMAIL_PASS// /}"
   else
     EMAIL_PASS=""
   fi
