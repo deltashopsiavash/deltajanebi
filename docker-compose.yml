@@ -15,9 +15,13 @@ services:
       retries: 20
 
   web:
-    build: .
+    image: deltajanebi-app:latest
+    build:
+      context: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      RUN_DJANGO_SETUP: "1"
     depends_on:
       db:
         condition: service_healthy
@@ -26,12 +30,13 @@ services:
       - media_data:/app/media
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/"]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 18
+      start_period: 10s
 
   bot:
-    build: .
+    image: deltajanebi-app:latest
     restart: unless-stopped
     command: ["python", "manage.py", "telegram_bot"]
     env_file: .env
@@ -42,7 +47,7 @@ services:
       - media_data:/app/media
 
   sync:
-    build: .
+    image: deltajanebi-app:latest
     restart: unless-stopped
     command: ["python", "manage.py", "sync_loop"]
     env_file: .env
