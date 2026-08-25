@@ -14,7 +14,8 @@ from shop.management.commands import telegram_bot_v5 as v5
 from shop.management.commands import telegram_bot_v6 as v6
 from shop.management.commands import telegram_bot_v7 as v7
 from shop.models import OrderItem, Product, SourceSite
-from shop.services.source_catalog import discover_product_urls, source_products, upsert_source_product_with_changes
+from shop.services.source_catalog import CatalogSkip, discover_product_urls, source_products, upsert_source_product_with_changes
+from shop.services.source_sync import SourceNotProductError
 
 
 def main_menu():
@@ -181,7 +182,7 @@ async def run_detailed_sync(message):
         await v7._safe_edit(status, "محصولی برای همگام‌سازی پیدا نشد.", reply_markup=admin_management_menu())
         return
 
-    done = created_count = changed_count = errors = 0
+    done = created_count = changed_count = errors = skipped = 0
     change_lines = []
     error_lines = []
     update_step = max(1, total // 100)
@@ -195,10 +196,12 @@ async def run_detailed_sync(message):
                 if created or changes:
                     changed_count += 1
                     change_lines.extend(_change_lines(site, product, created, changes))
+            except (SourceNotProductError, CatalogSkip):
+                skipped += 1
             except Exception as exc:
                 errors += 1
                 if len(error_lines) < 8:
-                    error_lines.append(f"{site.name}: {str(exc)[:120]}")
+                    error_lines.append(f"{site.name}: {str(exc)[:120]}\n🔗 {url}")
             done += 1
             if done == total or done % update_step == 0:
                 percent = int(done * 100 / total)
@@ -209,6 +212,7 @@ async def run_detailed_sync(message):
                     f"📦 {done:,}/{total:,}\n"
                     f"➕ جدید: {created_count:,}\n"
                     f"🔔 دارای تغییر: {changed_count:,}\n"
+                    f"⏭ رد خودکار: {skipped:,}\n"
                     f"⚠️ خطا: {errors:,}\n\n"
                     f"🌐 {site.name}",
                 )
@@ -223,6 +227,7 @@ async def run_detailed_sync(message):
         f"📦 بررسی‌شده: {total:,}\n"
         f"➕ جدید: {created_count:,}\n"
         f"🔔 محصولات دارای تغییر: {changed_count:,}\n"
+        f"⏭ رد خودکار: {skipped:,}\n"
         f"⚠️ خطا: {errors:,}\n\n"
         "گزارش پایین فقط تغییرات را نمایش می‌دهد.",
         reply_markup=admin_management_menu(),
@@ -235,7 +240,7 @@ async def run_detailed_sync(message):
         await message.reply_text("✅ هیچ تغییر جدیدی در محصولات پیدا نشد.")
     notes = warnings + error_lines
     if notes:
-        await message.reply_text("⚠️ خطاهای همگام‌سازی:\n" + "\n".join(f"• {x}" for x in notes[:10]))
+        await message.reply_text("⚠️ خطاهای همگام‌سازی:\n" + "\n\n".join(f"• {x}" for x in notes[:10]))
 
 
 async def on_callback(update: Update, context):
