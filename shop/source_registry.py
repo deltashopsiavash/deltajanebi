@@ -66,7 +66,7 @@ def allowed_url(url):
     allowed = {canonical_hostname(x) for x in SourceSite.objects.filter(is_active=True).values_list("hostname", flat=True)}
     allowed.update(
         canonical_hostname(x)
-        for x in os.getenv("SOURCE_ALLOWED_HOSTS", "hamrahedovom.ir,www.hamrahedovom.ir").split(",")
+        for x in os.getenv("SOURCE_ALLOWED_HOSTS", "").split(",")
         if x.strip()
     )
     if hostname not in allowed:
