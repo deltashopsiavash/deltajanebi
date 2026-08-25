@@ -1,37 +1,43 @@
 {% extends 'base.html' %}
 {% block content %}
 
+{% if categories %}
+<div class="mobile-quick-cats">
+  {% for c in categories|slice:':5' %}
+  <a class="mobile-quick-cat" href="{% url 'category' c.slug %}">
+    <span class="mobile-quick-media">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span>{{ c.name|slice:':1' }}</span>{% endif %}</span>
+    <span>{{ c.name|truncatechars:12 }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if banners %}
 <style>
-.home-banner-carousel{position:relative;margin-top:24px;border-radius:22px;overflow:hidden;background:#f5f7fa;box-shadow:0 10px 32px rgba(20,38,63,.08);direction:ltr;touch-action:pan-y;user-select:none;-webkit-user-select:none}.home-banner-viewport{overflow:hidden;width:100%;border-radius:inherit}.home-banner-track{display:flex;width:100%;will-change:transform;transition:transform .55s cubic-bezier(.22,.61,.36,1)}.home-banner-slide{position:relative;display:block;flex:0 0 100%;width:100%;aspect-ratio:6/1;overflow:hidden;background:#eef1f5}.home-banner-slide img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}.home-banner-carousel.is-dragging{cursor:grabbing}.home-banner-carousel:not(.is-dragging){cursor:grab}.home-banner-arrow{position:absolute;z-index:3;top:50%;transform:translateY(-50%);width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 6px 18px rgba(15,23,42,.16);color:#273142;font-size:24px;line-height:1;display:grid;place-items:center;cursor:pointer;opacity:0;transition:.2s}.home-banner-carousel:hover .home-banner-arrow{opacity:1}.home-banner-prev{left:14px}.home-banner-next{right:14px}.home-banner-dots{position:absolute;z-index:3;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(255,255,255,.58);backdrop-filter:blur(6px);padding:5px 7px;border-radius:999px}.home-banner-dot{width:7px;height:7px;border:0;border-radius:999px;padding:0;background:rgba(30,41,59,.35);cursor:pointer;transition:.25s}.home-banner-dot.active{width:19px;background:#1f2937}.home-banner-carousel.single .home-banner-arrow,.home-banner-carousel.single .home-banner-dots{display:none}@media(max-width:760px){.home-banner-carousel{margin-top:14px;border-radius:15px}.home-banner-slide{aspect-ratio:2.65/1}.home-banner-arrow{display:none}.home-banner-dots{bottom:7px;padding:4px 6px}.home-banner-dot{width:6px;height:6px}.home-banner-dot.active{width:16px}}
+.home-banner-carousel{position:relative;margin-top:24px;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 10px 32px rgba(20,38,63,.08);direction:ltr;touch-action:pan-y;user-select:none;-webkit-user-select:none}.home-banner-viewport{overflow:hidden;width:100%;border-radius:inherit}.home-banner-track{display:flex;width:100%;will-change:transform;transition:transform .55s cubic-bezier(.22,.61,.36,1)}.home-banner-slide{position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 100%;width:100%;aspect-ratio:6/1;overflow:hidden;background:#fff}.home-banner-slide picture{width:100%;height:100%;display:block}.home-banner-slide img{display:block;width:100%;height:100%;object-fit:contain;object-position:center;pointer-events:none;-webkit-user-drag:none;background:#fff}.home-banner-carousel.is-dragging{cursor:grabbing}.home-banner-carousel:not(.is-dragging){cursor:grab}.home-banner-arrow{position:absolute;z-index:3;top:50%;transform:translateY(-50%);width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 6px 18px rgba(15,23,42,.16);color:#273142;font-size:24px;line-height:1;display:grid;place-items:center;cursor:pointer;opacity:0;transition:.2s}.home-banner-carousel:hover .home-banner-arrow{opacity:1}.home-banner-prev{left:14px}.home-banner-next{right:14px}.home-banner-dots{position:absolute;z-index:3;left:50%;bottom:9px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(255,255,255,.7);backdrop-filter:blur(6px);padding:5px 7px;border-radius:999px}.home-banner-dot{width:7px;height:7px;border:0;border-radius:999px;padding:0;background:rgba(30,41,59,.35);cursor:pointer;transition:.25s}.home-banner-dot.active{width:19px;background:#1377dc}.home-banner-carousel.single .home-banner-arrow,.home-banner-carousel.single .home-banner-dots{display:none}@media(max-width:760px){.home-banner-carousel{width:calc(100% - 24px);margin:10px auto 0;border-radius:15px;box-shadow:0 7px 22px rgba(20,38,63,.08)}.home-banner-slide{aspect-ratio:18/7}.home-banner-slide img{object-fit:contain}.home-banner-arrow{display:none}.home-banner-dots{bottom:6px;padding:4px 6px}.home-banner-dot{width:6px;height:6px}.home-banner-dot.active{width:16px}}
 </style>
 <section class="wrap home-banner-carousel {% if banners|length == 1 %}single{% endif %}" id="home-banner-carousel" data-autoplay-ms="4500" aria-label="بنرهای تبلیغاتی">
   <div class="home-banner-viewport">
     <div class="home-banner-track" id="home-banner-track">
       {% for banner in banners %}
-        {% if banner.target_url %}
-          <a class="home-banner-slide" href="{{ banner.target_url }}" data-banner-slide aria-label="{{ banner.title|default:'بنر تبلیغاتی' }}">
+        {% if banner.target_url %}<a class="home-banner-slide" href="{{ banner.target_url }}" data-banner-slide aria-label="{{ banner.title|default:'بنر تبلیغاتی' }}">{% else %}<div class="home-banner-slide" data-banner-slide>{% endif %}
+          <picture>
+            <source media="(max-width:760px)" srcset="{{ banner.mobile_image_src }}">
             <img src="{{ banner.image_src }}" alt="{{ banner.title }}" draggable="false">
-          </a>
-        {% else %}
-          <div class="home-banner-slide" data-banner-slide>
-            <img src="{{ banner.image_src }}" alt="{{ banner.title }}" draggable="false">
-          </div>
-        {% endif %}
+          </picture>
+        {% if banner.target_url %}</a>{% else %}</div>{% endif %}
       {% endfor %}
     </div>
   </div>
   {% if banners|length > 1 %}
     <button class="home-banner-arrow home-banner-prev" type="button" id="home-banner-prev" aria-label="بنر قبلی">‹</button>
     <button class="home-banner-arrow home-banner-next" type="button" id="home-banner-next" aria-label="بنر بعدی">›</button>
-    <div class="home-banner-dots" id="home-banner-dots" aria-label="انتخاب بنر">
-      {% for banner in banners %}<button class="home-banner-dot {% if forloop.first %}active{% endif %}" type="button" data-banner-dot="{{ forloop.counter0 }}" aria-label="بنر {{ forloop.counter }}"></button>{% endfor %}
-    </div>
+    <div class="home-banner-dots" id="home-banner-dots" aria-label="انتخاب بنر">{% for banner in banners %}<button class="home-banner-dot {% if forloop.first %}active{% endif %}" type="button" data-banner-dot="{{ forloop.counter0 }}" aria-label="بنر {{ forloop.counter }}"></button>{% endfor %}</div>
   {% endif %}
 </section>
 {% endif %}
 
-{% if categories %}<section class="wrap"><div class="home-category-head"><h2>دسته‌بندی محصولات</h2><p>سریع‌تر به چیزی که می‌خواهی برس</p></div><div class="category-orbits">{% for c in categories %}<a class="category-orbit" href="{% url 'category' c.slug %}"><span class="category-orbit-media">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span class="category-orbit-letter">{{ c.name|slice:':1' }}</span>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>{% endif %}
+{% if categories %}<section class="wrap desktop-category-section"><div class="home-category-head"><h2>دسته‌بندی محصولات</h2><p>سریع‌تر به چیزی که می‌خواهی برس</p></div><div class="category-orbits">{% for c in categories %}<a class="category-orbit" href="{% url 'category' c.slug %}"><span class="category-orbit-media">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}">{% else %}<span class="category-orbit-letter">{{ c.name|slice:':1' }}</span>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>{% endif %}
 
 {% if offers %}<section class="wrap special-offers"><div class="section-head"><div><span class="sale-badge">زمان‌دار</span><h2>پیشنهادهای ویژه</h2></div><span class="special-offer-note">تا پایان تایمر با قیمت ویژه</span></div>{% with products=offers %}{% include 'shop/_grid.html' %}{% endwith %}</section>{% endif %}
 
@@ -50,56 +56,18 @@
   const prev=document.getElementById('home-banner-prev');
   const next=document.getElementById('home-banner-next');
   if(!slides.length)return;
-
   let index=0,timer=null,startX=0,lastX=0,dragging=false,moved=false,suppressClick=false;
   const autoplay=Math.max(2500,parseInt(root.dataset.autoplayMs||'4500',10));
-
-  function normalize(i){return (i+slides.length)%slides.length;}
-  function render(animate=true,dragPx=0){
-    track.style.transition=animate?'transform .55s cubic-bezier(.22,.61,.36,1)':'none';
-    const base=index*100;
-    track.style.transform=dragPx?`translate3d(calc(-${base}% + ${dragPx}px),0,0)`:`translate3d(-${base}%,0,0)`;
-    dots.forEach((dot,i)=>dot.classList.toggle('active',i===index));
-  }
-  function go(i){index=normalize(i);render(true);restart();}
-  function stop(){if(timer){clearInterval(timer);timer=null;}}
-  function start(){if(slides.length<2||dragging)return;stop();timer=setInterval(()=>{index=normalize(index+1);render(true);},autoplay);}
-  function restart(){stop();start();}
-
-  if(prev)prev.addEventListener('click',()=>go(index-1));
-  if(next)next.addEventListener('click',()=>go(index+1));
-  dots.forEach(dot=>dot.addEventListener('click',()=>go(parseInt(dot.dataset.bannerDot,10))));
-
-  root.addEventListener('pointerdown',e=>{
-    if(slides.length<2||e.button>0)return;
-    dragging=true;moved=false;startX=lastX=e.clientX;stop();root.classList.add('is-dragging');
-    try{root.setPointerCapture(e.pointerId);}catch(_){}
-  });
-  root.addEventListener('pointermove',e=>{
-    if(!dragging)return;
-    lastX=e.clientX;
-    const dx=lastX-startX;
-    if(Math.abs(dx)>5)moved=true;
-    render(false,dx);
-  });
-  function finishDrag(e){
-    if(!dragging)return;
-    const dx=lastX-startX;
-    dragging=false;root.classList.remove('is-dragging');
-    try{root.releasePointerCapture(e.pointerId);}catch(_){}
-    if(Math.abs(dx)>55){index=normalize(index+(dx<0?1:-1));}
-    suppressClick=moved;
-    render(true);start();
-    setTimeout(()=>{suppressClick=false;},80);
-  }
-  root.addEventListener('pointerup',finishDrag);
-  root.addEventListener('pointercancel',finishDrag);
-  root.addEventListener('click',e=>{if(suppressClick){e.preventDefault();e.stopPropagation();}},true);
-  root.addEventListener('mouseenter',stop);
-  root.addEventListener('mouseleave',()=>{if(!dragging)start();});
-  document.addEventListener('visibilitychange',()=>{document.hidden?stop():start();});
-
-  render(false);start();
+  function normalize(i){return(i+slides.length)%slides.length}
+  function render(animate=true,dragPx=0){track.style.transition=animate?'transform .55s cubic-bezier(.22,.61,.36,1)':'none';const base=index*100;track.style.transform=dragPx?`translate3d(calc(-${base}% + ${dragPx}px),0,0)`:`translate3d(-${base}%,0,0)`;dots.forEach((dot,i)=>dot.classList.toggle('active',i===index))}
+  function stop(){if(timer){clearInterval(timer);timer=null}}
+  function start(){if(slides.length<2||dragging)return;stop();timer=setInterval(()=>{index=normalize(index+1);render(true)},autoplay)}
+  function go(i){index=normalize(i);render(true);start()}
+  if(prev)prev.addEventListener('click',()=>go(index-1));if(next)next.addEventListener('click',()=>go(index+1));dots.forEach(dot=>dot.addEventListener('click',()=>go(parseInt(dot.dataset.bannerDot,10))));
+  root.addEventListener('pointerdown',e=>{if(slides.length<2||e.button>0)return;dragging=true;moved=false;startX=lastX=e.clientX;stop();root.classList.add('is-dragging');try{root.setPointerCapture(e.pointerId)}catch(_){}});
+  root.addEventListener('pointermove',e=>{if(!dragging)return;lastX=e.clientX;const dx=lastX-startX;if(Math.abs(dx)>5)moved=true;render(false,dx)});
+  function finishDrag(e){if(!dragging)return;const dx=lastX-startX;dragging=false;root.classList.remove('is-dragging');try{root.releasePointerCapture(e.pointerId)}catch(_){}if(Math.abs(dx)>55)index=normalize(index+(dx<0?1:-1));suppressClick=moved;render(true);start();setTimeout(()=>{suppressClick=false},80)}
+  root.addEventListener('pointerup',finishDrag);root.addEventListener('pointercancel',finishDrag);root.addEventListener('click',e=>{if(suppressClick){e.preventDefault();e.stopPropagation()}},true);root.addEventListener('mouseenter',stop);root.addEventListener('mouseleave',()=>{if(!dragging)start()});document.addEventListener('visibilitychange',()=>{document.hidden?stop():start()});render(false);start();
 })();
 </script>
 {% endif %}
