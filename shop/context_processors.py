@@ -1,6 +1,14 @@
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, Q
 
 from .models import Category, SiteSetting, SocialLink, TrustBadge
+
+
+def _nav_queryset():
+    return (
+        Category.objects.filter(is_active=True)
+        .annotate(active_child_count=Count("children", filter=Q(children__is_active=True)))
+        .order_by("-active_child_count", "order", "name")
+    )
 
 
 def store_context(request):
@@ -13,10 +21,10 @@ def store_context(request):
 
     nav_categories = []
     if settings:
-        active_categories = Category.objects.filter(is_active=True).order_by("order", "name")
+        active_categories = _nav_queryset()
         nav_categories = list(
-            Category.objects.filter(is_active=True, parent__isnull=True)
-            .order_by("order", "name")
+            _nav_queryset()
+            .filter(parent__isnull=True)
             .prefetch_related(
                 Prefetch("children", queryset=active_categories),
                 Prefetch("children__children", queryset=active_categories),
