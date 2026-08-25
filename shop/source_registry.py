@@ -1,4 +1,5 @@
 import ipaddress
+import json
 import os
 import socket
 from urllib.parse import urlparse
@@ -64,11 +65,7 @@ def allowed_url(url):
     original_hostname = parsed.hostname.lower().strip(".")
     hostname = canonical_hostname(original_hostname)
     allowed = {canonical_hostname(x) for x in SourceSite.objects.filter(is_active=True).values_list("hostname", flat=True)}
-    allowed.update(
-        canonical_hostname(x)
-        for x in os.getenv("SOURCE_ALLOWED_HOSTS", "").split(",")
-        if x.strip()
-    )
+    allowed.update(canonical_hostname(x) for x in os.getenv("SOURCE_ALLOWED_HOSTS", "").split(",") if x.strip())
     if hostname not in allowed:
         return False
     try:
@@ -92,3 +89,76 @@ def source_brand_terms():
         if value and value not in terms:
             terms.append(value)
     return terms
+
+
+def generic_category_names(soup):
+    names = []
+    bad_names = {"خانه", "صفحه اصلی", "فروشگاه", "محصولات", "home", "shop", "products"}
+
+    def add(value):
+        text = " ".join(str(value or "").split()).strip(" -|–—")
+        if not text or text.lower() in bad_names or len(text) > 120:
+            return
+        lower = text.lower()
+        if any(term in lower for term in source_brand_terms()):
+            return
+        if text not in names:
+            names.append(text)
+
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        while stack:
+            item = stack.pop(0)
+            if not isinstance(item, dict):
+                continue
+            graph = item.get("@graph")
+            if isinstance(graph, list):
+                stack.extend(graph)
+            kind = item.get("@type", "")
+            kinds = kind if isinstance(kind, list) else [kind]
+            if not any(str(x).lower() == "breadcrumblist" for x in kinds):
+                continue
+            entries = item.get("itemListElement") or []
+            for index, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    continue
+                nested = entry.get("item")
+                if isinstance(nested, dict):
+                    name = nested.get("name") or entry.get("name")
+                    href = nested.get("@id") or nested.get("url") or ""
+                else:
+                    name = entry.get("name")
+                    href = nested if isinstance(nested, str) else ""
+                href_lower = str(href).lower()
+                is_last = index == len(entries) - 1
+                if is_last and href_lower and any(token in href_lower for token in ("/product/", "/products/", "/p/")) and "category" not in href_lower:
+                    continue
+                add(name)
+
+    if names:
+        return names[:8]
+
+    selectors = [
+        ".breadcrumb a",
+        ".breadcrumbs a",
+        "[class*='breadcrumb'] a",
+        "nav[aria-label*='breadcrumb' i] a",
+        "[itemtype*='BreadcrumbList'] a",
+    ]
+    for selector in selectors:
+        anchors = soup.select(selector)
+        if not anchors:
+            continue
+        for anchor in anchors:
+            href = str(anchor.get("href") or "").lower()
+            text = anchor.get_text(" ", strip=True)
+            if any(token in href for token in ("/product/", "/products/", "/p/")) and "category" not in href:
+                continue
+            add(text)
+        if names:
+            break
+    return names[:8]
