@@ -14,6 +14,11 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.AlterField(
+            model_name="product",
+            name="price",
+            field=models.PositiveBigIntegerField(default=0, help_text="قیمت پایه فروش به تومان"),
+        ),
         migrations.AddField(
             model_name="product",
             name="public_code",
