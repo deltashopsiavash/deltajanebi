@@ -48,6 +48,13 @@ def order_products_text(order):
 def order_report_text(order, title="🧾 فاکتور جدید"):
     created = timezone.localtime(order.created_at).strftime("%Y/%m/%d - %H:%M:%S")
     paid = timezone.localtime(order.paid_at).strftime("%Y/%m/%d - %H:%M:%S") if order.paid_at else "-"
+    receipt_time = ""
+    if order.receipt and order.payment_status == Order.PAY_RECEIPT:
+        receipt_time = timezone.localtime(order.updated_at).strftime("%Y/%m/%d - %H:%M:%S")
+    time_lines = f"زمان ساخت فاکتور: {created}\n"
+    if receipt_time:
+        time_lines += f"زمان ارسال رسید: {receipt_time}\n"
+    time_lines += f"زمان تایید پرداخت: {paid}"
     return (
         f"{title}\n"
         f"سفارش: #{order.id}\n"
@@ -64,8 +71,7 @@ def order_report_text(order, title="🧾 فاکتور جدید"):
         f"📍 {order.province}، {order.city}\n{order.address}\n"
         + (f"📝 یادداشت: {order.order_note}\n" if order.order_note else "")
         + f"\n📦 محصولات:\n{order_products_text(order)}\n\n"
-        f"زمان ساخت فاکتور: {created}\n"
-        f"زمان پرداخت: {paid}"
+        + time_lines
         + (f"\nشماره تراکنش: {order.zarinpal_ref_id}" if order.zarinpal_ref_id else "")
         + (f"\n۴ رقم آخر کارت: {order.card_last4}" if order.card_last4 else "")
     )
