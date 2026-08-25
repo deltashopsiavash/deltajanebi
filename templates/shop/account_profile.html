@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}مشخصات حساب | {{ store_settings.store_name }}{% endblock %}
+{% block content %}
+<section class="wrap account-center">
+  <div class="account-page-head">
+    <div><span class="eyebrow">حساب کاربری</span><h1>مشخصات حساب</h1><p>اطلاعات شخصی و راه‌های ارتباطی خودت را مدیریت کن.</p></div>
+    <div class="account-stat"><b>{{ orders_count }}</b><span>سفارش ثبت‌شده</span></div>
+  </div>
+
+  <div class="account-layout">
+    <aside class="account-side-card">
+      <div class="account-avatar">{{ user.email|first|upper }}</div>
+      <strong>{{ user.get_full_name|default:'کاربر فروشگاه' }}</strong>
+      <small>{{ user.email }}</small>
+      <nav>
+        <a class="active" href="{% url 'account_profile' %}">👤 مشخصات حساب</a>
+        <a href="{% url 'account_orders' %}">📦 سفارش‌ها</a>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">↪ خروج</button></form>
+      </nav>
+    </aside>
+
+    <div class="account-main-card">
+      <div class="account-card-title"><h2>اطلاعات شخصی</h2><p>برای پیگیری سفارش و پشتیبانی، اطلاعات را دقیق نگه دار.</p></div>
+      <form method="post" class="account-form">{% csrf_token %}
+        <div class="account-form-grid">{% for field in form %}<label><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<small class="field-error">{{ field.errors|striptags }}</small>{% endif %}</label>{% endfor %}</div>
+        <button class="btn" type="submit">ذخیره تغییرات</button>
+      </form>
+      {% if last_order %}<div class="last-order-box"><div><small>آخرین سفارش</small><strong>#{{ last_order.id }} • {{ last_order.get_status_display }}</strong></div><a href="{% url 'account_order_detail' last_order.id %}">مشاهده سفارش</a></div>{% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}
