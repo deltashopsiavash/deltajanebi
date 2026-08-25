@@ -2,6 +2,10 @@
 {% block title %}جزئیات پرداخت | {{ store_settings.store_name }}{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="{% static 'css/commerce.css' %}">
+<style>
+.wallet-pay-box{grid-column:1/-1;border:1px solid #dfe6ee;border-radius:18px;padding:16px;background:linear-gradient(135deg,#f8fbff,#fff);margin-top:4px}.wallet-pay-choice{display:flex;gap:12px;align-items:flex-start;cursor:pointer}.wallet-pay-choice input{width:20px;height:20px;margin-top:2px;accent-color:#ef233c}.wallet-pay-copy{display:flex;flex-direction:column;gap:4px}.wallet-pay-copy strong{font-size:15px}.wallet-pay-copy small{color:#687386}.wallet-live{display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #d9e0e8;gap:7px}.wallet-live.active{display:grid}.wallet-live-row{display:flex;justify-content:space-between;gap:16px;font-size:13px}.wallet-live-row b{white-space:nowrap}.wallet-live-row.remaining{font-size:15px}.wallet-full-note{display:none;margin-top:10px;border-radius:12px;background:#e9f8ef;color:#13733a;padding:10px 12px;font-weight:700}.wallet-full-note.active{display:block}.payment-methods.wallet-covered{display:none}.checkout-summary .summary-row.wallet-credit{color:#13733a}.checkout-summary .summary-row.wallet-remaining{border-top:1px dashed #d9e0e8;padding-top:12px}@media(max-width:700px){.wallet-pay-box{padding:14px;border-radius:15px}.wallet-pay-copy strong{font-size:14px}.wallet-live-row{font-size:12px}.wallet-live-row.remaining{font-size:14px}}
+html[data-theme='dark'] .wallet-pay-box{background:#161a20;border-color:#303640}html[data-theme='dark'] .wallet-pay-copy small{color:#aeb8c6}html[data-theme='dark'] .wallet-live{border-color:#303640}html[data-theme='dark'] .wallet-full-note{background:#173222;color:#8be7ae}
+</style>
 <section class="wrap commerce-page">
   <div class="checkout-layout">
     <form method="post" class="checkout-card" novalidate>
@@ -77,11 +81,25 @@
           <textarea name="order_note" rows="3" placeholder="توضیحی برای سفارش دارید؟">{{ form.order_note.value|default:'' }}</textarea>
         </div>
 
-        <div class="payment-methods">
+        {% if wallet_balance > 0 %}
+        <div class="wallet-pay-box" data-wallet-balance="{{ wallet_balance }}" data-order-total="{{ total }}">
+          <label class="wallet-pay-choice">
+            <input type="checkbox" id="use-wallet" name="use_wallet" value="1" {% if form.use_wallet.value %}checked{% endif %}>
+            <span class="wallet-pay-copy"><strong>👛 پرداخت از موجودی کیف پول</strong><small>موجودی شما: <b>{{ wallet_balance|money }} تومان</b> — در صورت انتخاب، تا سقف مبلغ سفارش از کیف پول کم می‌شود.</small></span>
+          </label>
+          <div class="wallet-live" id="wallet-live">
+            <div class="wallet-live-row"><span>سهم کیف پول</span><b id="wallet-used-text">0 تومان</b></div>
+            <div class="wallet-live-row remaining"><span>مبلغ باقی‌مانده برای پرداخت</span><b id="wallet-due-text">{{ total|money }} تومان</b></div>
+          </div>
+          <div class="wallet-full-note" id="wallet-full-note">✅ موجودی کیف پول کل مبلغ سفارش را پوشش می‌دهد؛ نیاز به درگاه یا کارت‌به‌کارت نیست.</div>
+        </div>
+        {% endif %}
+
+        <div class="payment-methods" id="payment-methods">
           <h3>روش پرداخت <span class="required-star">*</span></h3>
           {% for value,label in form.fields.payment_method.choices %}
-            {% if value %}<label class="payment-choice"><input type="radio" name="payment_method" value="{{ value }}" {% if form.payment_method.value == value or not form.payment_method.value and forloop.first %}checked{% endif %} required><span>{% if value == 'zarinpal' %}💳{% else %}🏦{% endif %} {{ label }}</span></label>{% endif %}
-          {% empty %}<div class="field-errors">هیچ روش پرداختی فعال نشده است.</div>{% endfor %}
+            <label class="payment-choice"><input type="radio" name="payment_method" value="{{ value }}" {% if form.payment_method.value == value or not form.payment_method.value and forloop.first %}checked{% endif %}><span>{% if value == 'zarinpal' %}💳{% else %}🏦{% endif %} {{ label }}</span></label>
+          {% empty %}<div class="field-errors">در حال حاضر روش پرداخت بیرونی فعالی وجود ندارد؛ فقط در صورتی می‌توانید ادامه دهید که کیف پول کل مبلغ سفارش را پوشش دهد.</div>{% endfor %}
           {% for e in form.payment_method.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
         </div>
 
@@ -101,6 +119,7 @@
       <div class="summary-row"><span>بسته‌بندی</span><b>{{ packaging|money }}</b></div>
       <div class="summary-row"><span>ارسال</span><b>{% if shipping %}{{ shipping|money }}{% else %}رایگان{% endif %}</b></div>
       <div class="summary-row final"><span>مبلغ نهایی</span><b>{{ total|money }} تومان</b></div>
+      {% if wallet_balance > 0 %}<div class="summary-row wallet-credit" id="summary-wallet-row" hidden><span>پرداخت از کیف پول</span><b id="summary-wallet-value">− 0 تومان</b></div><div class="summary-row wallet-remaining" id="summary-due-row" hidden><span>باقی‌مانده پرداخت</span><b id="summary-due-value">{{ total|money }} تومان</b></div>{% endif %}
     </aside>
   </div>
 </section>
@@ -123,47 +142,12 @@
   const cityLabel=document.getElementById('city-label');
 
   const normalize=value=>String(value||'').trim().toLocaleLowerCase('fa-IR').replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/\u200c/g,' ');
-  const closeAll=()=>{
-    [provincePanel,cityPanel].forEach(x=>x.classList.remove('open'));
-    [provinceTrigger,cityTrigger].forEach(x=>x.setAttribute('aria-expanded','false'));
-  };
-  const filterButtons=(box,term)=>{
-    const q=normalize(term);
-    box.querySelectorAll('button[data-value]').forEach(btn=>{btn.hidden=q&&!normalize(btn.dataset.value).includes(q)});
-  };
-  const makeCityOptions=()=>{
-    const cities=locations[provinceInput.value]||[];
-    cityOptions.innerHTML='';
-    cities.forEach(name=>{
-      const btn=document.createElement('button');
-      btn.type='button';btn.dataset.value=name;btn.textContent=name;
-      if(name===cityInput.value)btn.classList.add('selected');
-      cityOptions.appendChild(btn);
-    });
-    cityTrigger.disabled=!cities.length;
-    if(!cities.length){cityLabel.textContent='ابتدا استان را انتخاب کنید'}
-  };
-  const openPanel=(panel,trigger,search)=>{
-    if(trigger.disabled)return;
-    const already=panel.classList.contains('open');
-    closeAll();
-    if(already)return;
-    panel.classList.add('open');trigger.setAttribute('aria-expanded','true');
-    search.value='';filterButtons(panel, '');
-    setTimeout(()=>search.focus(),30);
-  };
-  const chooseProvince=value=>{
-    const changed=provinceInput.value!==value;
-    provinceInput.value=value;provinceLabel.textContent=value;
-    provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));
-    if(changed){cityInput.value='';cityLabel.textContent='یک شهر انتخاب کنید'}
-    makeCityOptions();closeAll();
-  };
-  const chooseCity=value=>{
-    cityInput.value=value;cityLabel.textContent=value;
-    cityOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));
-    closeAll();
-  };
+  const closeAll=()=>{[provincePanel,cityPanel].forEach(x=>x.classList.remove('open'));[provinceTrigger,cityTrigger].forEach(x=>x.setAttribute('aria-expanded','false'))};
+  const filterButtons=(box,term)=>{const q=normalize(term);box.querySelectorAll('button[data-value]').forEach(btn=>{btn.hidden=q&&!normalize(btn.dataset.value).includes(q)})};
+  const makeCityOptions=()=>{const cities=locations[provinceInput.value]||[];cityOptions.innerHTML='';cities.forEach(name=>{const btn=document.createElement('button');btn.type='button';btn.dataset.value=name;btn.textContent=name;if(name===cityInput.value)btn.classList.add('selected');cityOptions.appendChild(btn)});cityTrigger.disabled=!cities.length;if(!cities.length)cityLabel.textContent='ابتدا استان را انتخاب کنید'};
+  const openPanel=(panel,trigger,search)=>{if(trigger.disabled)return;const already=panel.classList.contains('open');closeAll();if(already)return;panel.classList.add('open');trigger.setAttribute('aria-expanded','true');search.value='';filterButtons(panel,'');setTimeout(()=>search.focus(),30)};
+  const chooseProvince=value=>{const changed=provinceInput.value!==value;provinceInput.value=value;provinceLabel.textContent=value;provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));if(changed){cityInput.value='';cityLabel.textContent='یک شهر انتخاب کنید'}makeCityOptions();closeAll()};
+  const chooseCity=value=>{cityInput.value=value;cityLabel.textContent=value;cityOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));closeAll()};
 
   provinceTrigger.addEventListener('click',()=>openPanel(provincePanel,provinceTrigger,provinceSearch));
   cityTrigger.addEventListener('click',()=>openPanel(cityPanel,cityTrigger,citySearch));
@@ -173,13 +157,33 @@
   cityOptions.addEventListener('click',e=>{const btn=e.target.closest('button[data-value]');if(btn)chooseCity(btn.dataset.value)});
   document.addEventListener('click',e=>{if(!e.target.closest('.smart-location-field'))closeAll()});
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll()});
-
-  if(provinceInput.value&&locations[provinceInput.value]){
-    provinceLabel.textContent=provinceInput.value;
-    provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===provinceInput.value));
-  }
+  if(provinceInput.value&&locations[provinceInput.value]){provinceLabel.textContent=provinceInput.value;provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===provinceInput.value))}
   makeCityOptions();
   if(cityInput.value&&(locations[provinceInput.value]||[]).includes(cityInput.value))cityLabel.textContent=cityInput.value;
+
+  const walletBox=document.querySelector('.wallet-pay-box');
+  const walletCheck=document.getElementById('use-wallet');
+  const methods=document.getElementById('payment-methods');
+  const radios=methods?[...methods.querySelectorAll('input[name="payment_method"]')]:[];
+  const fmt=n=>Number(n||0).toLocaleString('en-US')+' تومان';
+  const updateWallet=()=>{
+    if(!walletBox||!walletCheck)return;
+    const balance=Number(walletBox.dataset.walletBalance||0);
+    const total=Number(walletBox.dataset.orderTotal||0);
+    const used=walletCheck.checked?Math.min(balance,total):0;
+    const due=Math.max(0,total-used);
+    document.getElementById('wallet-live')?.classList.toggle('active',walletCheck.checked);
+    document.getElementById('wallet-full-note')?.classList.toggle('active',walletCheck.checked&&due===0);
+    const usedText=document.getElementById('wallet-used-text');if(usedText)usedText.textContent=fmt(used);
+    const dueText=document.getElementById('wallet-due-text');if(dueText)dueText.textContent=fmt(due);
+    const sWallet=document.getElementById('summary-wallet-row');const sDue=document.getElementById('summary-due-row');
+    if(sWallet){sWallet.hidden=!walletCheck.checked;document.getElementById('summary-wallet-value').textContent='− '+fmt(used)}
+    if(sDue){sDue.hidden=!walletCheck.checked;document.getElementById('summary-due-value').textContent=fmt(due)}
+    if(methods)methods.classList.toggle('wallet-covered',walletCheck.checked&&due===0);
+    radios.forEach(r=>{r.disabled=walletCheck.checked&&due===0;r.required=due>0});
+  };
+  if(walletCheck){walletCheck.addEventListener('change',updateWallet);updateWallet()}
+  else radios.forEach(r=>r.required=true);
 })();
 </script>
 {% endblock %}
