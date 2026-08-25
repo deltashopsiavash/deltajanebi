@@ -7,6 +7,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 from shop.management.commands import telegram_bot as old
 from shop.management.commands import telegram_bot_v3 as v3
 from shop.management.commands import telegram_bot_v4 as v4
+from shop.management.commands import telegram_bot_v5 as v5
 from shop.management.commands import telegram_bot_v6 as v6
 from shop.management.commands import telegram_bot_v7 as v7
 from shop.management.commands import telegram_bot_v8 as v8
@@ -167,7 +168,7 @@ class Command(v10.Command):
         v8.main_menu = v11.main_menu
         v8.settings_menu = v11.settings_menu
         v9.settings_menu = v11.settings_menu
-        v4.show_categories = v11.v5.show_categories
+        v4.show_categories = v5.show_categories
         v4.source_text = v7.source_text
         v4.source_actions = v7.source_actions
         v6.source_text = v7.source_text
