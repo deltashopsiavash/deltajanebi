@@ -56,23 +56,28 @@
   function setupEyes(){document.querySelectorAll('.auth-input input[type="password"],.auth-input input[data-eye-ready="1"]').forEach(addEye)}
 
   function setupAjaxLogin(){
-    document.querySelectorAll('.auth-progress-shell form[action="/login/"]').forEach(form=>{
-      if(form.dataset.ajaxLogin==='1')return;form.dataset.ajaxLogin='1';
+    document.querySelectorAll('.auth-modern-form').forEach(form=>{
+      const emailInput=form.querySelector('input[name="username"]');
+      const passwordInput=form.querySelector('input[name="password"]');
+      if(!emailInput||!passwordInput||form.dataset.ajaxLogin==='1')return;
+      form.dataset.ajaxLogin='1';
       form.addEventListener('submit',async e=>{
         e.preventDefault();
         let error=form.querySelector('.auth-inline-error');if(error)error.remove();
-        const email=form.querySelector('input[name="username"]')?.value||'';
-        const password=form.querySelector('input[name="password"]')?.value||'';
+        const email=emailInput.value||'';
+        const password=passwordInput.value||'';
         const next=form.querySelector('input[name="next"]')?.value||location.pathname+location.search;
         const submit=form.querySelector('.auth-primary');submit?.classList.add('is-loading');
-        const fd=new FormData();fd.append('email',email);fd.append('password',password);fd.append('next',next);fd.append('csrfmiddlewaretoken',csrf());
+        const token=form.querySelector('input[name="csrfmiddlewaretoken"]')?.value||csrf();
+        const fd=new FormData();fd.append('email',email);fd.append('password',password);fd.append('next',next);if(token)fd.append('csrfmiddlewaretoken',token);
         try{
-          const r=await fetch('/auth/login/',{method:'POST',body:fd,headers:{'X-Requested-With':'XMLHttpRequest','Accept':'application/json'}});const d=await r.json();
-          if(!r.ok||!d.ok){throw new Error(d.error||'ورود انجام نشد.')}
+          const r=await fetch('/auth/login/',{method:'POST',body:fd,headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest','Accept':'application/json'}});
+          let d={};try{d=await r.json()}catch(_){d={ok:false,error:'ورود انجام نشد. دوباره تلاش کن.'}}
+          if(!r.ok||!d.ok){throw new Error(d.error||'ایمیل یا رمز عبور درست نیست. دوباره بررسی کن.')}
           location.href=d.redirect||'/';
         }catch(err){
           error=document.createElement('div');error.className='auth-inline-error';error.textContent=err.message||'ایمیل یا رمز عبور درست نیست.';
-          const button=form.querySelector('.auth-primary');form.insertBefore(error,button);form.querySelector('input[name="password"]')?.focus();
+          const button=form.querySelector('.auth-primary');form.insertBefore(error,button);passwordInput.focus();
         }finally{submit?.classList.remove('is-loading')}
       });
     });
