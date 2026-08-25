@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Banner, Category, Order, OrderItem, Product, SiteSetting, SocialLink, SourceSite, TrustBadge, User
+from .models import Banner, Category, DiscountCode, Order, OrderItem, Product, SiteSetting, SocialLink, SourceSite, TrustBadge, User
 
 
 @admin.register(User)
@@ -37,8 +37,8 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(SourceSite)
 class SourceSiteAdmin(admin.ModelAdmin):
-    list_display = ("name", "hostname", "base_url", "is_active", "created_at")
-    list_filter = ("is_active",)
+    list_display = ("name", "hostname", "base_url", "bulk_import_enabled", "is_active", "last_bulk_sync_at")
+    list_filter = ("is_active", "bulk_import_enabled")
     search_fields = ("name", "hostname", "base_url", "brand_terms")
 
 
@@ -60,6 +60,19 @@ class BannerAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
 
 
+@admin.register(DiscountCode)
+class DiscountCodeAdmin(admin.ModelAdmin):
+    list_display = ("code", "discount_type", "value", "is_active", "starts_at", "ends_at")
+    list_filter = ("discount_type", "is_active")
+    search_fields = ("code",)
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ("id", "full_name", "payment_method", "payment_status", "status", "total", "created_at")
+    list_filter = ("payment_method", "payment_status", "status")
+    search_fields = ("id", "full_name", "phone", "zarinpal_ref_id")
+
+
 admin.site.register(SiteSetting)
-admin.site.register(Order)
 admin.site.register(OrderItem)
