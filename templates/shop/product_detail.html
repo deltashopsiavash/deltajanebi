@@ -1,1 +1,108 @@
-{% extends 'base.html' %}{% block title %}{{ product.name }}{% endblock %}{% block content %}<section class="wrap product"><div class="gallery"><div class="mainpic">{% if product.image_url %}<img src="{{ product.image_url }}">{% else %}بدون تصویر{% endif %}</div>{% if product.gallery|length > 1 %}<div class="thumbs">{% for i in product.gallery|slice:':6' %}<img src="{{ i }}">{% endfor %}</div>{% endif %}</div><div class="pinfo"><div class="crumb">صفحه اصلی / {{ product.category.name|default:'محصول' }}</div><h1>{{ product.name }}</h1>{% if product.sku %}<div class="sku">کد کالا: {{ product.sku }}</div>{% endif %}<div class="availability">{% if product.stock %}✅ موجود در انبار ({{ product.stock }} عدد){% else %}❌ ناموجود{% endif %}</div><div class="bigprice">{{ product.price|floatformat:0 }} <small>تومان</small></div><form method="post" action="{% url 'cart_add' product.id %}">{% csrf_token %}<button class="btn huge" {% if not product.stock %}disabled{% endif %}>افزودن به سبد خرید</button></form><div class="trust"><span>✓ ضمانت سلامت</span><span>✓ ارسال سریع</span><span>✓ پشتیبانی خرید</span></div></div></section>{% if product.description %}<section class="wrap details"><h2>معرفی محصول</h2><p>{{ product.description|linebreaksbr }}</p></section>{% endif %}{% if product.specs %}<section class="wrap details"><h2>مشخصات</h2><div class="specs">{% for k,v in product.specs.items %}<div><b>{{ k }}</b><span>{{ v }}</span></div>{% endfor %}</div></section>{% endif %}{% endblock %}
+{% extends 'base.html' %}
+{% block title %}{{ product.name }}{% endblock %}
+{% block content %}
+<section class="wrap pd-page">
+  <nav class="pd-breadcrumb" aria-label="breadcrumb">
+    <a href="/">صفحه اصلی</a>
+    {% for c in breadcrumbs %}<span>›</span><a href="{% url 'category' c.slug %}">{{ c.name }}</a>{% endfor %}
+    <span>›</span><span>{{ product.name }}</span>
+  </nav>
+
+  <div class="pd-grid">
+    <aside class="pd-buy-card">
+      <div class="pd-ready"><span class="pd-ready-icon">✓</span><strong>آماده ارسال</strong></div>
+      <div class="pd-buy-divider"></div>
+      <div class="pd-stock-row"><span>وضعیت کالا</span><b>{% if product.stock %}موجود در انبار{% else %}ناموجود{% endif %}</b></div>
+      {% if product.stock %}<div class="pd-stock-count">{{ product.stock }} عدد موجود</div>{% endif %}
+      <div class="pd-buy-divider"></div>
+      <div class="pd-price-label">قیمت فروش</div>
+      <div class="pd-price"><strong>{{ product.price|floatformat:0 }}</strong><span>تومان</span></div>
+      <form method="post" action="{% url 'cart_add' product.id %}" class="pd-add-form">
+        {% csrf_token %}
+        <button class="pd-add-btn" {% if not product.stock %}disabled{% endif %}>{% if product.stock %}افزودن به سبد خرید{% else %}فعلاً ناموجود{% endif %}</button>
+      </form>
+      <div class="pd-buy-notes">
+        <div><span>✓</span> ضمانت سلامت فیزیکی</div>
+        <div><span>✓</span> ارسال سریع پس از تأیید سفارش</div>
+        <div><span>✓</span> پشتیبانی خرید</div>
+      </div>
+    </aside>
+
+    <section class="pd-info">
+      <div class="pd-label">{{ product.category.name|default:'لوازم جانبی موبایل' }}</div>
+      <h1>{{ product.name }}</h1>
+      {% if product.sku %}<div class="pd-sku">کد کالا: <b>{{ product.sku }}</b></div>{% endif %}
+
+      <div class="pd-shipping-card">
+        <div class="pd-shipping-icon">↗</div>
+        <div><strong>شرایط ارسال کالا</strong><p>سفارش پس از تأیید پرداخت وارد مرحله آماده‌سازی می‌شود و وضعیت آن از حساب کاربری قابل پیگیری است.</p></div>
+      </div>
+
+      <div class="pd-service-card">
+        <div class="pd-service-art">🚚</div>
+        <div><strong>ارسال مطمئن سفارش</strong><p>{% if store_settings.shipping_cost %}هزینه ارسال فعلی: {{ store_settings.shipping_cost|floatformat:0 }} تومان{% else %}هزینه ارسال در مرحله ثبت سفارش محاسبه می‌شود.{% endif %}</p></div>
+      </div>
+
+      {% if feature_specs %}
+      <div class="pd-feature-title">ویژگی‌های محصول</div>
+      <div class="pd-feature-chips">
+        {% for key,value in feature_specs %}<div><small>{{ key }}</small><strong>{{ value }}</strong></div>{% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="pd-gallery-card">
+      {% if gallery_images %}
+      <div class="pd-main-image-wrap"><img id="pd-main-image" src="{{ gallery_images.0 }}" alt="{{ product.name }}"></div>
+      {% if gallery_images|length > 1 %}
+      <div class="pd-thumbnails" id="pd-thumbnails">
+        {% for image in gallery_images %}
+        <button type="button" class="pd-thumb {% if forloop.first %}active{% endif %}" data-image="{{ image }}" aria-label="نمایش تصویر {{ forloop.counter }}"><img src="{{ image }}" alt=""></button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="pd-no-image">تصویری برای این محصول ثبت نشده است</div>
+      {% endif %}
+    </section>
+  </div>
+</section>
+
+{% if product.description %}
+<section class="wrap pd-section">
+  <div class="pd-section-head"><span></span><h2>معرفی محصول</h2></div>
+  <div class="pd-description">{{ product.description|linebreaksbr }}</div>
+</section>
+{% endif %}
+
+{% if product.specs %}
+<section class="wrap pd-section">
+  <div class="pd-section-head"><span></span><h2>مشخصات محصول</h2></div>
+  <div class="pd-spec-table">
+    {% for key,value in product.specs.items %}<div class="pd-spec-row"><b>{{ key }}</b><span>{{ value }}</span></div>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<script>
+(function(){
+  const main = document.getElementById('pd-main-image');
+  const thumbs = document.querySelectorAll('.pd-thumb');
+  if (!main || !thumbs.length) return;
+  thumbs.forEach(btn => btn.addEventListener('click', function(){
+    const next = this.dataset.image;
+    if (!next) return;
+    main.classList.add('changing');
+    const preload = new Image();
+    preload.onload = () => {
+      main.src = next;
+      main.classList.remove('changing');
+      thumbs.forEach(x => x.classList.remove('active'));
+      this.classList.add('active');
+    };
+    preload.onerror = () => main.classList.remove('changing');
+    preload.src = next;
+  }));
+})();
+</script>
+{% endblock %}
