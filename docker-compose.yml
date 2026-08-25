@@ -29,8 +29,6 @@ services:
       - static_data:/app/staticfiles
       - media_data:/app/media
     healthcheck:
-      # Check the real storefront page, not only a DB-free ping endpoint.
-      # This catches migration/template/query errors that otherwise return HTTP 500.
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 10s
       timeout: 5s
@@ -47,6 +45,8 @@ services:
         condition: service_healthy
     volumes:
       - media_data:/app/media
+      - backup_data:/app/backups
+      - ./.env:/app/.env.host:ro
 
   sync:
     image: deltajanebi-app:latest
@@ -81,5 +81,6 @@ volumes:
   postgres_data:
   static_data:
   media_data:
+  backup_data:
   caddy_data:
   caddy_config:
