@@ -1,18 +1,185 @@
 {% extends 'base.html' %}{% load store_filters static %}
 {% block title %}جزئیات پرداخت | {{ store_settings.store_name }}{% endblock %}
-{% block content %}<link rel="stylesheet" href="{% static 'css/commerce.css' %}">
-<section class="wrap commerce-page"><div class="checkout-layout"><form method="post" class="checkout-card" novalidate>{% csrf_token %}<h1>جزئیات پرداخت</h1><p class="sub">اطلاعات دریافت‌کننده و روش پرداخت را تکمیل کنید.</p><div class="checkout-fields">
-<div class="checkout-field"><label>نام <span class="required-star">*</span></label><input name="first_name" value="{{ form.first_name.value|default:'' }}" required autocomplete="given-name">{% for e in form.first_name.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field"><label>نام خانوادگی <span class="required-star">*</span></label><input name="last_name" value="{{ form.last_name.value|default:'' }}" required autocomplete="family-name">{% for e in form.last_name.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field"><label>استان <span class="required-star">*</span></label><input id="province-input" name="province" list="province-list" value="{{ form.province.value|default:'' }}" placeholder="نام استان را بنویسید یا انتخاب کنید" required autocomplete="off"><datalist id="province-list">{% for province in locations.keys %}<option value="{{ province }}"></option>{% endfor %}</datalist>{% for e in form.province.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field"><label>شهر <span class="required-star">*</span></label><input id="city-input" name="city" list="city-list" value="{{ form.city.value|default:'' }}" placeholder="ابتدا استان را انتخاب کنید" required autocomplete="off"><datalist id="city-list"></datalist>{% for e in form.city.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field full"><label>آدرس کامل <span class="required-star">*</span></label><textarea name="address" rows="4" required autocomplete="street-address">{{ form.address.value|default:'' }}</textarea>{% for e in form.address.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field"><label>شماره همراه <span class="required-star">*</span></label><input name="phone" value="{{ form.phone.value|default:'' }}" required inputmode="tel" autocomplete="tel">{% for e in form.phone.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<div class="checkout-field full"><label>یادداشت سفارش <small>(اختیاری)</small></label><textarea name="order_note" rows="3" placeholder="توضیحی برای سفارش دارید؟">{{ form.order_note.value|default:'' }}</textarea></div>
-<div class="payment-methods"><h3>روش پرداخت <span class="required-star">*</span></h3>{% for value,label in form.fields.payment_method.choices %}{% if value %}<label class="payment-choice"><input type="radio" name="payment_method" value="{{ value }}" {% if form.payment_method.value == value or not form.payment_method.value and forloop.first %}checked{% endif %} required><span>{% if value == 'zarinpal' %}💳{% else %}🏦{% endif %} {{ label }}</span></label>{% endif %}{% empty %}<div class="field-errors">هیچ روش پرداختی فعال نشده است.</div>{% endfor %}{% for e in form.payment_method.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}</div>
-<label class="terms-check"><input type="checkbox" name="accept_terms" value="1" {% if form.accept_terms.value %}checked{% endif %} required><span><a href="{% url 'terms' %}" target="_blank">قوانین و مقررات</a> فروشگاه اینترنتی {{ store_settings.store_name }} را خوانده‌ام و آن‌ها را می‌پذیرم <span class="required-star">*</span></span></label>{% for e in form.accept_terms.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
-</div>{% if form.non_field_errors %}<div class="field-errors">{{ form.non_field_errors }}</div>{% endif %}<button class="checkout-primary" type="submit">ادامه و پرداخت</button></form>
-<aside class="checkout-summary"><h2>سفارش شما</h2>{% for line in lines %}<div class="checkout-mini-item">{% if line.product.primary_image %}<img src="{{ line.product.primary_image }}" alt="">{% endif %}<span>{{ line.product.name }} × {{ line.qty }}<br><b>{{ line.total|money }} تومان</b></span></div>{% endfor %}<div class="summary-row"><span>جمع کالاها</span><b>{{ subtotal|money }}</b></div>{% if discount_amount %}<div class="summary-row discount"><span>تخفیف</span><b>− {{ discount_amount|money }}</b></div>{% endif %}<div class="summary-row"><span>بسته‌بندی</span><b>{{ packaging|money }}</b></div><div class="summary-row"><span>ارسال</span><b>{% if shipping %}{{ shipping|money }}{% else %}رایگان{% endif %}</b></div><div class="summary-row final"><span>مبلغ نهایی</span><b>{{ total|money }} تومان</b></div></aside></div></section>
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/commerce.css' %}">
+<section class="wrap commerce-page">
+  <div class="checkout-layout">
+    <form method="post" class="checkout-card" novalidate>
+      {% csrf_token %}
+      <h1>جزئیات پرداخت</h1>
+      <p class="sub">اطلاعات دریافت‌کننده و روش پرداخت را تکمیل کنید.</p>
+
+      <div class="checkout-fields">
+        <div class="checkout-field">
+          <label>نام <span class="required-star">*</span></label>
+          <input name="first_name" value="{{ form.first_name.value|default:'' }}" required autocomplete="given-name">
+          {% for e in form.first_name.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <div class="checkout-field">
+          <label>نام خانوادگی <span class="required-star">*</span></label>
+          <input name="last_name" value="{{ form.last_name.value|default:'' }}" required autocomplete="family-name">
+          {% for e in form.last_name.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <div class="location-pair">
+          <div class="checkout-field smart-location-field" data-location-box="province">
+            <label>استان <span class="required-star">*</span></label>
+            <input type="hidden" id="province-input" name="province" value="{{ form.province.value|default:'' }}">
+            <button type="button" class="smart-select-trigger" id="province-trigger" aria-expanded="false">
+              <span id="province-label">{% if form.province.value %}{{ form.province.value }}{% else %}یک استان انتخاب کنید{% endif %}</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"></path></svg>
+            </button>
+            <div class="smart-select-panel" id="province-panel">
+              <div class="smart-select-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg><input type="search" id="province-search" placeholder="جستجوی استان..." autocomplete="off"></div>
+              <div class="smart-select-options" id="province-options">
+                {% for province in locations.keys %}<button type="button" data-value="{{ province }}">{{ province }}</button>{% endfor %}
+              </div>
+            </div>
+            {% for e in form.province.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+          </div>
+
+          <div class="checkout-field smart-location-field" data-location-box="city">
+            <label>شهر <span class="required-star">*</span></label>
+            <input type="hidden" id="city-input" name="city" value="{{ form.city.value|default:'' }}">
+            <button type="button" class="smart-select-trigger" id="city-trigger" aria-expanded="false">
+              <span id="city-label">{% if form.city.value %}{{ form.city.value }}{% else %}یک شهر انتخاب کنید{% endif %}</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"></path></svg>
+            </button>
+            <div class="smart-select-panel" id="city-panel">
+              <div class="smart-select-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg><input type="search" id="city-search" placeholder="جستجوی شهر..." autocomplete="off"></div>
+              <div class="smart-select-options" id="city-options"></div>
+            </div>
+            {% for e in form.city.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+          </div>
+        </div>
+
+        <div class="checkout-field full">
+          <label>آدرس کامل <span class="required-star">*</span></label>
+          <textarea name="address" rows="4" required autocomplete="street-address" placeholder="خیابان، کوچه، پلاک و واحد">{{ form.address.value|default:'' }}</textarea>
+          {% for e in form.address.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <div class="checkout-field full">
+          <label>کد پستی <span class="required-star">*</span></label>
+          <input name="postal_code" value="{{ form.postal_code.value|default:'' }}" required inputmode="numeric" autocomplete="postal-code" maxlength="10" placeholder="کد پستی ۱۰ رقمی">
+          {% for e in form.postal_code.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <div class="checkout-field full">
+          <label>شماره همراه <span class="required-star">*</span></label>
+          <input name="phone" value="{{ form.phone.value|default:'' }}" required inputmode="tel" autocomplete="tel" placeholder="09xxxxxxxxx">
+          {% for e in form.phone.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <div class="checkout-field full">
+          <label>یادداشت سفارش <small>(اختیاری)</small></label>
+          <textarea name="order_note" rows="3" placeholder="توضیحی برای سفارش دارید؟">{{ form.order_note.value|default:'' }}</textarea>
+        </div>
+
+        <div class="payment-methods">
+          <h3>روش پرداخت <span class="required-star">*</span></h3>
+          {% for value,label in form.fields.payment_method.choices %}
+            {% if value %}<label class="payment-choice"><input type="radio" name="payment_method" value="{{ value }}" {% if form.payment_method.value == value or not form.payment_method.value and forloop.first %}checked{% endif %} required><span>{% if value == 'zarinpal' %}💳{% else %}🏦{% endif %} {{ label }}</span></label>{% endif %}
+          {% empty %}<div class="field-errors">هیچ روش پرداختی فعال نشده است.</div>{% endfor %}
+          {% for e in form.payment_method.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+        </div>
+
+        <label class="terms-check"><input type="checkbox" name="accept_terms" value="1" {% if form.accept_terms.value %}checked{% endif %} required><span><a href="{% url 'terms' %}" target="_blank">قوانین و مقررات</a> فروشگاه اینترنتی {{ store_settings.store_name }} را خوانده‌ام و آن‌ها را می‌پذیرم <span class="required-star">*</span></span></label>
+        {% for e in form.accept_terms.errors %}<div class="field-errors">{{ e }}</div>{% endfor %}
+      </div>
+
+      {% if form.non_field_errors %}<div class="field-errors">{{ form.non_field_errors }}</div>{% endif %}
+      <button class="checkout-primary" type="submit">ادامه و پرداخت</button>
+    </form>
+
+    <aside class="checkout-summary">
+      <h2>سفارش شما</h2>
+      {% for line in lines %}<div class="checkout-mini-item">{% if line.product.primary_image %}<img src="{{ line.product.primary_image }}" alt="">{% endif %}<span>{{ line.product.name }} × {{ line.qty }}<br><b>{{ line.total|money }} تومان</b></span></div>{% endfor %}
+      <div class="summary-row"><span>جمع کالاها</span><b>{{ subtotal|money }}</b></div>
+      {% if discount_amount %}<div class="summary-row discount"><span>تخفیف</span><b>− {{ discount_amount|money }}</b></div>{% endif %}
+      <div class="summary-row"><span>بسته‌بندی</span><b>{{ packaging|money }}</b></div>
+      <div class="summary-row"><span>ارسال</span><b>{% if shipping %}{{ shipping|money }}{% else %}رایگان{% endif %}</b></div>
+      <div class="summary-row final"><span>مبلغ نهایی</span><b>{{ total|money }} تومان</b></div>
+    </aside>
+  </div>
+</section>
+
 {{ locations|json_script:'iran-locations' }}
-<script>(function(){const data=JSON.parse(document.getElementById('iran-locations').textContent||'{}'),province=document.getElementById('province-input'),city=document.getElementById('city-input'),list=document.getElementById('city-list');function fill(reset=false){const cities=data[province.value]||[];list.innerHTML=cities.map(x=>`<option value="${String(x).replace(/"/g,'&quot;')}"></option>`).join('');city.placeholder=cities.length?'نام شهر را بنویسید یا انتخاب کنید':'شهر';if(reset)city.value=''}province.addEventListener('change',()=>fill(true));province.addEventListener('input',()=>{if(data[province.value])fill(true)});fill(false)})();</script>
+<script>
+(function(){
+  const locations=JSON.parse(document.getElementById('iran-locations').textContent||'{}');
+  const provinceInput=document.getElementById('province-input');
+  const cityInput=document.getElementById('city-input');
+  const provinceTrigger=document.getElementById('province-trigger');
+  const cityTrigger=document.getElementById('city-trigger');
+  const provincePanel=document.getElementById('province-panel');
+  const cityPanel=document.getElementById('city-panel');
+  const provinceSearch=document.getElementById('province-search');
+  const citySearch=document.getElementById('city-search');
+  const provinceOptions=document.getElementById('province-options');
+  const cityOptions=document.getElementById('city-options');
+  const provinceLabel=document.getElementById('province-label');
+  const cityLabel=document.getElementById('city-label');
+
+  const normalize=value=>String(value||'').trim().toLocaleLowerCase('fa-IR').replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/\u200c/g,' ');
+  const closeAll=()=>{
+    [provincePanel,cityPanel].forEach(x=>x.classList.remove('open'));
+    [provinceTrigger,cityTrigger].forEach(x=>x.setAttribute('aria-expanded','false'));
+  };
+  const filterButtons=(box,term)=>{
+    const q=normalize(term);
+    box.querySelectorAll('button[data-value]').forEach(btn=>{btn.hidden=q&&!normalize(btn.dataset.value).includes(q)});
+  };
+  const makeCityOptions=()=>{
+    const cities=locations[provinceInput.value]||[];
+    cityOptions.innerHTML='';
+    cities.forEach(name=>{
+      const btn=document.createElement('button');
+      btn.type='button';btn.dataset.value=name;btn.textContent=name;
+      if(name===cityInput.value)btn.classList.add('selected');
+      cityOptions.appendChild(btn);
+    });
+    cityTrigger.disabled=!cities.length;
+    if(!cities.length){cityLabel.textContent='ابتدا استان را انتخاب کنید'}
+  };
+  const openPanel=(panel,trigger,search)=>{
+    if(trigger.disabled)return;
+    const already=panel.classList.contains('open');
+    closeAll();
+    if(already)return;
+    panel.classList.add('open');trigger.setAttribute('aria-expanded','true');
+    search.value='';filterButtons(panel, '');
+    setTimeout(()=>search.focus(),30);
+  };
+  const chooseProvince=value=>{
+    const changed=provinceInput.value!==value;
+    provinceInput.value=value;provinceLabel.textContent=value;
+    provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));
+    if(changed){cityInput.value='';cityLabel.textContent='یک شهر انتخاب کنید'}
+    makeCityOptions();closeAll();
+  };
+  const chooseCity=value=>{
+    cityInput.value=value;cityLabel.textContent=value;
+    cityOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===value));
+    closeAll();
+  };
+
+  provinceTrigger.addEventListener('click',()=>openPanel(provincePanel,provinceTrigger,provinceSearch));
+  cityTrigger.addEventListener('click',()=>openPanel(cityPanel,cityTrigger,citySearch));
+  provinceSearch.addEventListener('input',()=>filterButtons(provinceOptions,provinceSearch.value));
+  citySearch.addEventListener('input',()=>filterButtons(cityOptions,citySearch.value));
+  provinceOptions.addEventListener('click',e=>{const btn=e.target.closest('button[data-value]');if(btn)chooseProvince(btn.dataset.value)});
+  cityOptions.addEventListener('click',e=>{const btn=e.target.closest('button[data-value]');if(btn)chooseCity(btn.dataset.value)});
+  document.addEventListener('click',e=>{if(!e.target.closest('.smart-location-field'))closeAll()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll()});
+
+  if(provinceInput.value&&locations[provinceInput.value]){
+    provinceLabel.textContent=provinceInput.value;
+    provinceOptions.querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x.dataset.value===provinceInput.value));
+  }
+  makeCityOptions();
+  if(cityInput.value&&(locations[provinceInput.value]||[]).includes(cityInput.value))cityLabel.textContent=cityInput.value;
+})();
+</script>
 {% endblock %}
