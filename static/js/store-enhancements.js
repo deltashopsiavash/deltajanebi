@@ -6,7 +6,7 @@
     const link=document.createElement('link');
     link.id='delta-dark-fixes';
     link.rel='stylesheet';
-    link.href='/static/css/dark-fixes.css?v=2';
+    link.href='/static/css/dark-fixes.css?v=5';
     document.head.appendChild(link);
   }
 
