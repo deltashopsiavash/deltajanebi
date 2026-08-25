@@ -243,7 +243,7 @@ def _reserve_order(request, form, totals):
         packaging = settings.packaging_cost
         final_total = max(0, locked_subtotal - discount_amount) + shipping + packaging
         cd = form.cleaned_data
-        order = Order.objects.create(user=request.user, status="payment_pending", first_name=cd["first_name"], last_name=cd["last_name"], full_name=f"{cd['first_name']} {cd['last_name']}".strip(), phone=cd["phone"], province=cd["province"], city=cd["city"], address=cd["address"], order_note=cd.get("order_note", ""), subtotal=locked_subtotal, discount_code=discount.code if discount else "", discount_amount=discount_amount, packaging_cost=packaging, shipping_cost=shipping, total=final_total, payment_method=cd["payment_method"], payment_status=Order.PAY_PENDING)
+        order = Order.objects.create(user=request.user, status="payment_pending", first_name=cd["first_name"], last_name=cd["last_name"], full_name=f"{cd['first_name']} {cd['last_name']}".strip(), phone=cd["phone"], province=cd["province"], city=cd["city"], address=cd["address"], postal_code=cd["postal_code"], order_note=cd.get("order_note", ""), subtotal=locked_subtotal, discount_code=discount.code if discount else "", discount_amount=discount_amount, packaging_cost=packaging, shipping_cost=shipping, total=final_total, payment_method=cd["payment_method"], payment_status=Order.PAY_PENDING)
         for product, qty, unit_price in locked_lines:
             OrderItem.objects.create(order=order, product=product, title=product.name, price=unit_price, quantity=qty)
             product.stock -= qty
