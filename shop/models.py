@@ -139,8 +139,6 @@ class Product(models.Model):
             self.slug = slug
         super().save(*args, **kwargs)
 
-        # Give newly-created category trees useful artwork automatically. We only
-        # fill empty category artwork, so a later custom category image is never overwritten.
         image = self.primary_image
         if self.category_id and image:
             current = self.category
@@ -183,6 +181,7 @@ class Product(models.Model):
 
 class SiteSetting(models.Model):
     store_name = models.CharField(max_length=120, default="دلتا جانبی")
+    logo = models.ImageField(upload_to="site/logo/", blank=True)
     logo_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     home_banner_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     shipping_cost = models.PositiveBigIntegerField(default=0)
@@ -190,6 +189,15 @@ class SiteSetting(models.Model):
     card_number = models.CharField(max_length=32, blank=True)
     card_owner = models.CharField(max_length=120, blank=True)
     support_text = models.CharField(max_length=240, blank=True)
+
+    @property
+    def logo_src(self):
+        if self.logo:
+            try:
+                return self.logo.url
+            except ValueError:
+                pass
+        return self.logo_url
 
     @classmethod
     def load(cls):
