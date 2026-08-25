@@ -1,12 +1,15 @@
 import ipaddress
 import json
-import os
 import socket
+from contextlib import contextmanager
+from contextvars import ContextVar
 from urllib.parse import urlparse
 
 from django.utils import timezone
 
 from .models import Product, SourceSite
+
+_ACTIVE_SOURCE_HOST = ContextVar("delta_active_source_host", default="")
 
 
 def canonical_hostname(value):
@@ -76,17 +79,29 @@ def allowed_url(url):
     return True
 
 
+@contextmanager
+def source_context(url):
+    parsed = urlparse(str(url or ""))
+    hostname = canonical_hostname(parsed.hostname) if parsed.hostname else ""
+    token = _ACTIVE_SOURCE_HOST.set(hostname)
+    try:
+        yield
+    finally:
+        _ACTIVE_SOURCE_HOST.reset(token)
+
+
 def source_brand_terms():
+    hostname = _ACTIVE_SOURCE_HOST.get()
+    if not hostname:
+        return []
+    item = SourceSite.objects.filter(hostname=hostname).only("name", "hostname", "brand_terms").first()
+    if not item:
+        return []
+    candidates = [item.name, item.hostname, item.hostname.split(".")[0]]
+    candidates.extend(x.strip() for x in (item.brand_terms or "").split(",") if x.strip())
     terms = []
-    for item in SourceSite.objects.filter(is_active=True).only("name", "hostname", "brand_terms"):
-        candidates = [item.name, item.hostname, item.hostname.split(".")[0]]
-        candidates.extend(x.strip() for x in (item.brand_terms or "").split(",") if x.strip())
-        for candidate in candidates:
-            value = str(candidate or "").strip().lower()
-            if value and value not in terms:
-                terms.append(value)
-    for value in os.getenv("SOURCE_BRAND_TERMS", "همراه دوم,hamrahedovom").split(","):
-        value = value.strip().lower()
+    for candidate in candidates:
+        value = str(candidate or "").strip().lower()
         if value and value not in terms:
             terms.append(value)
     return terms
