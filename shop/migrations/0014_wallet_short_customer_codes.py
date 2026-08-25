@@ -4,8 +4,8 @@ from django.db import migrations
 def shorten_customer_codes(apps, schema_editor):
     User = apps.get_model("shop", "User")
     User.objects.filter(is_staff=False).update(customer_code=None)
-    for user in User.objects.filter(is_staff=False).order_by("id").iterator():
-        user.customer_code = f"#{1000 + user.pk}"
+    for number, user in enumerate(User.objects.filter(is_staff=False).order_by("id").iterator(), start=1001):
+        user.customer_code = f"#{number}"
         user.save(update_fields=["customer_code"])
 
 
