@@ -1,5 +1,5 @@
-from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import JsonResponse
 
 from .models import User
@@ -14,5 +14,5 @@ def email_check(request):
 
     return JsonResponse({
         "ok": True,
-        "exists": User.objects.filter(email__iexact=email, is_active=True).exists(),
+        "exists": User.objects.filter(email__iexact=email).exists(),
     })
