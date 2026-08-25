@@ -223,6 +223,7 @@ class SiteSetting(models.Model):
     home_banner_url = models.URLField(max_length=URL_MAX_LENGTH, blank=True)
     shipping_cost = models.PositiveBigIntegerField(default=0)
     phone = models.CharField(max_length=30, blank=True)
+    footer_phone = models.CharField(max_length=30, blank=True)
     address = models.TextField(blank=True)
     contact_email = models.EmailField(blank=True)
     footer_description = models.TextField(blank=True)
