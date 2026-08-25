@@ -16,7 +16,7 @@ from shop.management.commands import telegram_bot_v8 as v8
 from shop.management.commands import telegram_bot_v9 as v9
 from shop.management.commands import telegram_bot_v10 as v10
 from shop.models import Announcement, Order, SiteSetting, User
-from shop.services.order_workflow import email_customer, mark_paid, order_report_text
+from shop.services.order_workflow import email_customer, mark_paid, order_report_text, release_order_stock
 from shop.services.telegram_notify import notify_admins
 
 PAGE_SIZE = 15
@@ -117,7 +117,7 @@ def _user_detail(uid):
         )
 
     full_name = user.get_full_name().strip() or "-"
-    text = (
+    return (
         "👤 مشخصات کامل کاربر\n\n"
         f"شماره مشتری: {user.customer_code or '-'}\n"
         f"نام و نام خانوادگی: {full_name}\n"
@@ -134,7 +134,6 @@ def _user_detail(uid):
         + "\n\n🧾 ۱۰ سفارش اخیر:\n"
         + ("\n".join(recent) if recent else "سفارشی ثبت نشده")
     )
-    return text
 
 
 def _announcement_menu():
@@ -154,6 +153,30 @@ def _announcement_text():
     total = Announcement.objects.count()
     active = Announcement.objects.filter(is_active=True).count()
     return f"🔔 اطلاع‌رسانی سایت\n\nکل اطلاعیه‌ها: {total:,}\nفعال: {active:,}\n\nهر اطلاعیه فعال برای کاربران ثبت‌نام‌شده به‌صورت زنگوله و Badge خوانده‌نشده نمایش داده می‌شود."
+
+
+async def order_status_callback(update: Update, context):
+    if not old.allowed(update):
+        return
+    q = update.callback_query
+    await q.answer()
+    _, oid, status = q.data.split(":")
+    order = await sync_to_async(Order.objects.select_related("user").get)(pk=int(oid))
+
+    if status != "cancelled" and order.payment_status != Order.PAY_PAID:
+        await q.edit_message_text(f"⛔ سفارش #{order.id} هنوز پرداخت/تایید نشده و نمی‌تواند وارد مرحله {dict(Order.STATUS).get(status, status)} شود.")
+        return
+
+    if status == "cancelled" and order.payment_status != Order.PAY_PAID and not order.reservation_released:
+        await sync_to_async(release_order_stock)(order)
+        order.reservation_released = True
+
+    order.status = status
+    fields = ["status", "updated_at"]
+    if order.reservation_released:
+        fields.append("reservation_released")
+    await sync_to_async(order.save)(update_fields=fields)
+    await q.edit_message_text(f"✅ سفارش #{order.id}: {order.get_status_display()}")
 
 
 async def on_callback(update: Update, context):
@@ -193,7 +216,9 @@ async def on_callback(update: Update, context):
     if data == "announcement:list":
         await q.answer()
         old.clear_state(context)
-        await q.message.reply_text(await sync_to_async(_announcement_text)(), reply_markup=await sync_to_async(_announcement_menu)())
+        text = await sync_to_async(_announcement_text)()
+        kb = await sync_to_async(_announcement_menu)()
+        await q.message.reply_text(text, reply_markup=kb)
         return
     if data == "announcement:add":
         await q.answer()
@@ -206,13 +231,15 @@ async def on_callback(update: Update, context):
         item = await sync_to_async(Announcement.objects.get)(pk=aid)
         item.is_active = not item.is_active
         await sync_to_async(item.save)(update_fields=["is_active"])
-        await q.message.reply_text("✅ وضعیت اطلاعیه تغییر کرد.", reply_markup=await sync_to_async(_announcement_menu)())
+        kb = await sync_to_async(_announcement_menu)()
+        await q.message.reply_text("✅ وضعیت اطلاعیه تغییر کرد.", reply_markup=kb)
         return
     if data.startswith("announcement:delete:"):
         await q.answer()
         aid = int(data.rsplit(":", 1)[1])
         await sync_to_async(Announcement.objects.filter(pk=aid).delete)()
-        await q.message.reply_text("🗑 اطلاعیه حذف شد.", reply_markup=await sync_to_async(_announcement_menu)())
+        kb = await sync_to_async(_announcement_menu)()
+        await q.message.reply_text("🗑 اطلاعیه حذف شد.", reply_markup=kb)
         return
 
     if data == "set:topbar":
@@ -238,7 +265,8 @@ async def on_callback(update: Update, context):
             await q.message.reply_text(f"⛔ امکان تایید نیست: {exc}")
             return
         await sync_to_async(email_customer)(order, f"پرداخت سفارش #{order.id} تایید شد", "رسید پرداخت شما تایید شد و سفارش وارد مرحله آماده‌سازی شد.")
-        await sync_to_async(notify_admins)(order_report_text(order, "✅ پرداخت کارت‌به‌کارت تایید شد"))
+        report = await sync_to_async(order_report_text)(order, "✅ پرداخت کارت‌به‌کارت تایید شد")
+        await sync_to_async(notify_admins)(report)
         await q.message.reply_text(f"✅ رسید سفارش #{order.id} تایید شد؛ موجودی واقعی همین الان کسر شد و سفارش وارد آماده‌سازی شد.")
         return
 
@@ -269,7 +297,8 @@ async def on_message(update: Update, context):
             return
         item = await sync_to_async(Announcement.objects.create)(text=text[:4000], is_active=True)
         old.clear_state(context)
-        await update.effective_message.reply_text(f"✅ اطلاعیه #{item.id} ثبت شد. زنگوله کاربران به‌صورت خوانده‌نشده نمایش داده می‌شود.", reply_markup=await sync_to_async(_announcement_menu)())
+        kb = await sync_to_async(_announcement_menu)()
+        await update.effective_message.reply_text(f"✅ اطلاعیه #{item.id} ثبت شد. زنگوله کاربران به‌صورت خوانده‌نشده نمایش داده می‌شود.", reply_markup=kb)
         return
 
     if state == "site_topbar_text":
@@ -310,7 +339,7 @@ class Command(v10.Command):
         app.add_handler(CommandHandler("start", old.start))
         app.add_handler(CommandHandler("cancel", old.cancel))
         app.add_handler(MessageHandler(filters.Regex(r"^/order_\d+$"), old.order_cmd))
-        app.add_handler(CallbackQueryHandler(old.order_callback, pattern=r"^order:\d+:(preparing|shipped|delivered|cancelled)$"))
+        app.add_handler(CallbackQueryHandler(order_status_callback, pattern=r"^order:\d+:(preparing|shipped|delivered|cancelled)$"))
         app.add_handler(CallbackQueryHandler(on_callback))
         app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, on_message))
         app.run_polling(allowed_updates=Update.ALL_TYPES)
