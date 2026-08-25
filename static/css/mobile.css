@@ -1,4 +1,4 @@
-.mobile-ui,.mobile-drawer-backdrop,.mobile-search-sheet,.mobile-bottom-nav{display:none}
+.mobile-ui,.mobile-drawer-backdrop,.mobile-search-sheet,.mobile-bottom-nav,.mobile-quick-cats{display:none}
 
 @media(max-width:760px){
   :root{--m-blue:#0878e8;--m-text:#20242b;--m-muted:#737d89;--m-line:#e8edf2;--m-bg:#fff}
