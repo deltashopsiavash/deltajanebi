@@ -1,22 +1,23 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Banner, Category, DiscountCode, Order, OrderItem, Product, SiteSetting, SocialLink, SourceSite, TrustBadge, User
+from .models import Announcement, AnnouncementRead, Banner, Category, DiscountCode, Order, OrderItem, Product, SiteSetting, SocialLink, SourceSite, TrustBadge, User
 
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
     model = User
     ordering = ("email",)
-    list_display = ("email", "is_staff", "is_active")
+    list_display = ("customer_code", "email", "first_name", "last_name", "phone", "is_staff", "is_active")
     fieldsets = (
-        (None, {"fields": ("email", "password")}),
+        (None, {"fields": ("email", "customer_code", "password")}),
         ("اطلاعات", {"fields": ("first_name", "last_name", "phone")}),
         ("دسترسی", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("تاریخ‌ها", {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = ((None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "is_staff", "is_active")}),)
-    search_fields = ("email",)
+    search_fields = ("customer_code", "email", "first_name", "last_name", "phone")
+    readonly_fields = ("customer_code",)
 
 
 @admin.register(Category)
@@ -29,10 +30,10 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("public_code", "name", "category", "price", "stock", "source_type", "last_synced_at", "is_active")
+    list_display = ("public_code", "name", "category", "price", "stock", "reserved_stock", "source_type", "last_synced_at", "is_active")
     list_filter = ("source_type", "is_active", "category")
     search_fields = ("public_code", "name", "sku", "source_url")
-    readonly_fields = ("public_code", "last_synced_at", "sync_error")
+    readonly_fields = ("public_code", "reserved_stock", "last_synced_at", "sync_error")
 
 
 @admin.register(SourceSite)
@@ -69,10 +70,22 @@ class DiscountCodeAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ("id", "full_name", "payment_method", "payment_status", "status", "total", "created_at")
-    list_filter = ("payment_method", "payment_status", "status")
-    search_fields = ("id", "full_name", "phone", "zarinpal_ref_id")
+    list_display = ("id", "full_name", "payment_method", "payment_status", "status", "total", "reservation_expires_at", "stock_committed", "created_at")
+    list_filter = ("payment_method", "payment_status", "status", "stock_committed", "reservation_released")
+    search_fields = ("id", "user__customer_code", "user__email", "full_name", "phone", "zarinpal_ref_id")
+
+
+@admin.register(Announcement)
+class AnnouncementAdmin(admin.ModelAdmin):
+    list_display = ("id", "short_text", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("text",)
+
+    @admin.display(description="متن")
+    def short_text(self, obj):
+        return obj.text[:80]
 
 
 admin.site.register(SiteSetting)
 admin.site.register(OrderItem)
+admin.site.register(AnnouncementRead)
