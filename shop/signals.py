@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -6,8 +7,32 @@ from shop.models import User
 from shop.services.telegram_notify import notify_admins
 
 
-def short_customer_code(user):
-    return f"#{1000 + int(user.pk)}"
+def _next_customer_number():
+    maximum = 1000
+    for value in User.objects.filter(is_staff=False, customer_code__startswith="#").values_list("customer_code", flat=True):
+        try:
+            maximum = max(maximum, int(str(value)[1:]))
+        except (TypeError, ValueError):
+            continue
+    return maximum + 1
+
+
+def assign_short_customer_code(user):
+    if not user.pk or user.is_staff:
+        return user.customer_code or ""
+    if str(user.customer_code or "").startswith("#"):
+        return user.customer_code
+
+    for _ in range(8):
+        desired = f"#{_next_customer_number()}"
+        try:
+            with transaction.atomic():
+                User.objects.filter(pk=user.pk).update(customer_code=desired)
+            user.customer_code = desired
+            return desired
+        except IntegrityError:
+            continue
+    raise IntegrityError("Could not allocate unique customer code")
 
 
 @receiver(post_save, sender=User)
@@ -15,10 +40,7 @@ def customer_created(sender, instance, created, **kwargs):
     if not instance.pk or instance.is_staff:
         return
 
-    desired = short_customer_code(instance)
-    if instance.customer_code != desired:
-        User.objects.filter(pk=instance.pk).update(customer_code=desired)
-        instance.customer_code = desired
+    desired = assign_short_customer_code(instance)
 
     if not created:
         return
