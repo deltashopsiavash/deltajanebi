@@ -14,8 +14,10 @@ from shop.management.commands import telegram_bot_v8 as v8
 from shop.management.commands import telegram_bot_v9 as v9
 from shop.management.commands import telegram_bot_v10 as v10
 from shop.management.commands import telegram_bot_v11 as v11
-from shop.models import User
-from shop.services.wallet import adjust_wallet, wallet_balance, wallet_history
+from shop.models import Order, User
+from shop.services.order_workflow import email_customer, order_report_text, release_order_stock
+from shop.services.telegram_notify import notify_admins
+from shop.services.wallet import adjust_wallet, refund_order_wallet, wallet_balance, wallet_history
 
 
 def main_menu():
@@ -75,6 +77,30 @@ async def _show_user(message, uid):
     kb = _user_keyboard(uid)
     for start in range(0, len(text), 3800):
         await message.reply_text(text[start:start + 3800], reply_markup=kb if start + 3800 >= len(text) else None)
+
+
+async def order_status_callback(update: Update, context):
+    if not old.allowed(update):
+        return
+    data = update.callback_query.data or ""
+    try:
+        _, oid, status = data.split(":")
+    except ValueError:
+        return await v11.order_status_callback(update, context)
+
+    await v11.order_status_callback(update, context)
+    if status != "cancelled":
+        return
+
+    try:
+        order = await sync_to_async(Order.objects.select_related("user").prefetch_related("items__product").get)(pk=int(oid))
+    except Order.DoesNotExist:
+        return
+    if order.payment_status == Order.PAY_PAID:
+        return
+    refunded = await sync_to_async(refund_order_wallet)(order, f"برگشت کیف پول سفارش #{order.id} به علت لغو سفارش توسط مدیر")
+    if refunded:
+        await sync_to_async(notify_admins)(order_report_text(order, "↩️ سفارش لغو شد و سهم کیف پول برگشت"))
 
 
 async def on_callback(update: Update, context):
@@ -177,6 +203,34 @@ async def on_message(update: Update, context):
         await _show_user(message, uid)
         return
 
+    if state == "receipt_reject_reason":
+        if not text:
+            await message.reply_text("دلیل رد را بنویس.")
+            return
+        flow = context.user_data.get("flow", {})
+        oid = int(flow["order_id"])
+        order = await sync_to_async(Order.objects.select_related("user").prefetch_related("items__product").get)(pk=oid)
+        if order.payment_status == Order.PAY_PAID or order.status in ("preparing", "shipped", "delivered"):
+            old.clear_state(context)
+            await message.reply_text("این پرداخت قبلاً تایید شده و دیگر قابل رد نیست.")
+            return
+        order.payment_status = Order.PAY_REJECTED
+        order.status = "payment_rejected"
+        order.receipt_rejection_reason = text[:1000]
+        await sync_to_async(order.save)(update_fields=["payment_status", "status", "receipt_rejection_reason", "updated_at"])
+        await sync_to_async(release_order_stock)(order)
+        refunded = await sync_to_async(refund_order_wallet)(order, f"برگشت کیف پول سفارش #{order.id} به علت رد رسید کارت‌به‌کارت")
+        await sync_to_async(email_customer)(
+            order,
+            f"رسید سفارش #{order.id} رد شد",
+            f"رسید پرداخت شما رد شد. دلیل: {order.receipt_rejection_reason}" + (" مبلغ استفاده‌شده از کیف پول نیز به موجودی شما برگشت." if refunded else ""),
+        )
+        await sync_to_async(notify_admins)(order_report_text(order, "❌ رسید کارت‌به‌کارت رد شد"))
+        old.clear_state(context)
+        extra = " سهم کیف پول هم به کاربر برگشت." if refunded else ""
+        await message.reply_text(f"❌ رسید سفارش #{order.id} رد شد.{extra}", reply_markup=v8.admin_management_menu())
+        return
+
     await v11.on_message(update, context)
 
 
@@ -205,7 +259,7 @@ class Command(v10.Command):
         app.add_handler(CommandHandler("start", old.start))
         app.add_handler(CommandHandler("cancel", old.cancel))
         app.add_handler(MessageHandler(filters.Regex(r"^/order_\d+$"), old.order_cmd))
-        app.add_handler(CallbackQueryHandler(v11.order_status_callback, pattern=r"^order:\d+:(preparing|shipped|delivered|cancelled)$"))
+        app.add_handler(CallbackQueryHandler(order_status_callback, pattern=r"^order:\d+:(preparing|shipped|delivered|cancelled)$"))
         app.add_handler(CallbackQueryHandler(on_callback))
         app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND, on_message))
         app.run_polling(allowed_updates=Update.ALL_TYPES)
