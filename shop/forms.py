@@ -6,9 +6,18 @@ from .models import Order, SiteSetting, User
 
 
 class RegisterForm(UserCreationForm):
+    first_name = forms.CharField(label="نام", max_length=150, required=True)
+    last_name = forms.CharField(label="نام خانوادگی", max_length=150, required=True)
+
     class Meta:
         model = User
-        fields = ("email", "phone", "password1", "password2")
+        fields = ("first_name", "last_name", "email", "phone", "password1", "password2")
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("این ایمیل قبلاً ثبت شده است.")
+        return email
 
 
 class AccountProfileForm(forms.ModelForm):
@@ -41,7 +50,7 @@ class CheckoutForm(forms.Form):
     province = forms.ChoiceField(label="استان", choices=())
     city = forms.CharField(label="شهر", max_length=80)
     address = forms.CharField(label="آدرس کامل", widget=forms.Textarea(attrs={"rows": 4, "autocomplete": "street-address"}))
-    postal_code = forms.CharField(label="کد پستی", max_length=10, min_length=10)
+    postal_code = forms.CharField(label="کد پستی", max_length=10, min_length=10, widget=forms.TextInput(attrs={"inputmode": "numeric", "autocomplete": "postal-code", "maxlength": "10", "placeholder": "کد پستی ۱۰ رقمی"}))
     phone = forms.CharField(label="شماره همراه", max_length=30, widget=forms.TextInput(attrs={"autocomplete": "tel", "inputmode": "tel"}))
     order_note = forms.CharField(label="یادداشت سفارش", required=False, widget=forms.Textarea(attrs={"rows": 3}))
     payment_method = forms.ChoiceField(label="روش پرداخت", choices=())
@@ -60,22 +69,20 @@ class CheckoutForm(forms.Form):
         if not methods:
             self.fields["payment_method"].choices = [("", "هیچ روش پرداختی فعال نیست")]
 
-    @staticmethod
-    def _latin_digits(value):
-        table = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
-        return str(value or "").translate(table)
-
     def clean_phone(self):
-        phone = self._latin_digits(self.cleaned_data["phone"]).strip().replace(" ", "").replace("-", "")
+        phone = self.cleaned_data["phone"].strip().replace(" ", "").replace("-", "")
         if len(phone) < 10 or not phone.lstrip("+").isdigit():
             raise forms.ValidationError("شماره همراه معتبر نیست.")
         return phone
 
     def clean_postal_code(self):
-        postal_code = self._latin_digits(self.cleaned_data["postal_code"]).strip().replace(" ", "").replace("-", "")
-        if len(postal_code) != 10 or not postal_code.isdigit():
+        value = (self.cleaned_data.get("postal_code") or "").strip()
+        fa = "۰۱۲۳۴۵۶۷۸۹"
+        ar = "٠١٢٣٤٥٦٧٨٩"
+        value = value.translate(str.maketrans(fa + ar, "0123456789" * 2)).replace(" ", "").replace("-", "")
+        if len(value) != 10 or not value.isdigit():
             raise forms.ValidationError("کد پستی باید دقیقاً ۱۰ رقم باشد.")
-        return postal_code
+        return value
 
     def clean(self):
         cleaned = super().clean()
