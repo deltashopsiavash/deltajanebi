@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Banner, Category, Order, OrderItem, Product, SiteSetting, SocialLink, User
+from .models import Banner, Category, Order, OrderItem, Product, SiteSetting, SocialLink, TrustBadge, User
 
 
 @admin.register(User)
@@ -15,9 +15,7 @@ class CustomUserAdmin(UserAdmin):
         ("دسترسی", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("تاریخ‌ها", {"fields": ("last_login", "date_joined")}),
     )
-    add_fieldsets = (
-        (None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "is_staff", "is_active")}),
-    )
+    add_fieldsets = ((None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "is_staff", "is_active")}),)
     search_fields = ("email",)
 
 
@@ -41,6 +39,12 @@ class ProductAdmin(admin.ModelAdmin):
 class SocialLinkAdmin(admin.ModelAdmin):
     list_display = ("label", "platform", "url", "is_active", "order")
     list_filter = ("platform", "is_active")
+
+
+@admin.register(TrustBadge)
+class TrustBadgeAdmin(admin.ModelAdmin):
+    list_display = ("badge_type", "target_url", "is_active")
+    list_filter = ("badge_type", "is_active")
 
 
 @admin.register(Banner)
