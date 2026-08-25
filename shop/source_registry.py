@@ -4,7 +4,9 @@ import os
 import socket
 from urllib.parse import urlparse
 
-from .models import SourceSite
+from django.utils import timezone
+
+from .models import Product, SourceSite
 
 
 def canonical_hostname(value):
@@ -162,3 +164,32 @@ def generic_category_names(soup):
         if names:
             break
     return names[:8]
+
+
+def stable_sync_product(product, raise_errors=False):
+    """Sync mutable source data without overwriting the category chosen by the admin."""
+    from shop.services.source_sync import scrape_product
+
+    try:
+        data = scrape_product(product.source_url)
+        product.name = data["name"] or product.name
+        product.description = data["description"] or product.description
+        product.source_price = data["price"]
+        product.price = product.apply_markup(data["price"])
+        product.stock = data["stock"]
+        product.image_url = data["image_url"] or product.image_url
+        product.gallery = data["gallery"] or ([product.image_url] if product.image_url else [])
+        product.specs = data["specs"] or product.specs
+        if data["sku"] and not Product.objects.exclude(pk=product.pk).filter(sku=data["sku"]).exists():
+            product.sku = data["sku"]
+        product.last_synced_at = timezone.now()
+        product.sync_error = ""
+        product.save()
+        return product
+    except Exception as exc:
+        product.sync_error = str(exc)[:2000]
+        product.last_synced_at = timezone.now()
+        product.save(update_fields=["sync_error", "last_synced_at"])
+        if raise_errors:
+            raise
+        return product
