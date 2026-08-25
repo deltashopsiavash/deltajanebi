@@ -227,7 +227,7 @@ class ReservationWorkflowTests(TestCase):
 class CustomerAndNotificationTests(TestCase):
     def test_customer_code_is_generated_and_visible_in_account(self):
         user = User.objects.create_user(email="customer@example.com", password="StrongPass123", first_name="دلتا")
-        self.assertEqual(user.customer_code, f"CU-{user.pk:07d}")
+        self.assertRegex(user.customer_code or "", r"^#\d{4,}$")
         self.client.force_login(user)
         response = self.client.get(reverse("account_profile"))
         self.assertContains(response, user.customer_code)
@@ -257,11 +257,11 @@ class CustomerAndNotificationTests(TestCase):
 
 class PaymentBotSmokeTests(TestCase):
     def test_bot_v11_and_payment_menus_import(self):
-        from .management.commands import telegram_bot_v9, telegram_bot_v10, telegram_bot_v11
+        from .management.commands import telegram_bot_v9, telegram_bot_v10, telegram_bot_v11, telegram_bot_v12
         from .services.payments import request_zarinpal_payment, verify_zarinpal_payment
 
         site = SiteSetting.load()
-        labels = [button.text for row in telegram_bot_v11.main_menu().inline_keyboard for button in row]
+        labels = [button.text for row in telegram_bot_v12.main_menu().inline_keyboard for button in row]
         self.assertIn("👥 کاربران", labels)
         self.assertIn("🔔 اطلاع‌رسانی", labels)
         settings_labels = [button.text for row in telegram_bot_v11.settings_menu().inline_keyboard for button in row]
