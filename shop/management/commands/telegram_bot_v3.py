@@ -11,6 +11,16 @@ from shop.management.commands import telegram_bot as old
 from shop.management.commands import telegram_bot_v2 as v2
 
 
+def main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🧰 محصولات عادی", callback_data="m:manual"), InlineKeyboardButton("🔗 محصولات خاص", callback_data="m:synced")],
+        [InlineKeyboardButton("🔎 جستجوی محصول", callback_data="search"), InlineKeyboardButton("⭐ پیشنهادهای فعال", callback_data="offers")],
+        [InlineKeyboardButton("📦 سفارش‌ها", callback_data="orders"), InlineKeyboardButton("📂 دسته‌بندی‌ها", callback_data="categories")],
+        [InlineKeyboardButton("🔄 همگام‌سازی همه", callback_data="syncall"), InlineKeyboardButton("⚙️ تنظیمات سایت", callback_data="settings")],
+        [InlineKeyboardButton("☎️ تلفن", callback_data="set:phone"), InlineKeyboardButton("💾 بکاپ", callback_data="backup")],
+    ])
+
+
 def settings_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ نام سایت", callback_data="set:name"), InlineKeyboardButton("🖼 لوگوی سایت", callback_data="set:logo")],
@@ -87,7 +97,8 @@ class Command(BaseCommand):
             self.stderr.write("TELEGRAM_BOT_TOKEN is empty")
             return
 
-        # Patch the original menu so every delegated settings response also includes Phone.
+        # Patch delegated responses so the active bot always uses the newest menus.
+        old.main_menu = main_menu
         old.settings_menu = settings_menu
 
         app = Application.builder().token(token).build()
