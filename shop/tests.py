@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Category, Product, SiteSetting, User
+from .models import Banner, Category, Product, SiteSetting, User
 from .services.source_sync import (
     _clean_source_description,
     _clean_source_name,
@@ -88,6 +88,16 @@ class StorefrontExperienceTests(TestCase):
         self.assertContains(response, "ورود / ثبت‌نام")
         self.assertContains(response, "کابل شارژ موبایل")
         self.assertContains(response, "auth-overlay")
+
+    def test_home_banner_carousel_replaces_static_hero_when_banners_exist(self):
+        Banner.objects.create(title="بنر اول", image_url="https://example.com/banner-1.jpg", is_active=True)
+        Banner.objects.create(title="بنر دوم", image_url="https://example.com/banner-2.jpg", is_active=True)
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "home-banner-carousel")
+        self.assertContains(response, "data-autoplay-ms=\"4500\"")
+        self.assertContains(response, "data-banner-dot=\"1\"")
+        self.assertNotContains(response, "خرید سریع، موجودی واقعی و قیمت به‌روز")
 
     def test_login_and_register_pages_render_modern_shell(self):
         login_response = self.client.get(reverse("login"))
