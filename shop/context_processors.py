@@ -1,6 +1,6 @@
 from django.db.models import Prefetch
 
-from .models import Category, SiteSetting, SocialLink
+from .models import Category, SiteSetting, SocialLink, TrustBadge
 
 
 def store_context(request):
@@ -23,9 +23,12 @@ def store_context(request):
             )[:12]
         )
 
+    badges = {item.badge_type: item for item in TrustBadge.objects.filter(is_active=True)} if settings else {}
+
     return {
         "store_settings": settings,
         "nav_categories": nav_categories,
         "social_links": SocialLink.objects.filter(is_active=True)[:12] if settings else [],
+        "trust_badges": badges,
         "cart_count": sum(int(v) for v in cart.values()),
     }
