@@ -1,13 +1,17 @@
 from django.urls import path
 
+from enhancements import account_views as enhanced_accounts
+from enhancements.site_api import bot_api
 from . import auth_views, views, wallet_checkout
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("api/bot/v1/", bot_api, name="bot_api_v1"),
     path("search/", views.search, name="search"),
     path("category/<str:slug>/", views.category, name="category"),
     path("p/<str:slug>/", views.product_detail, name="product_detail"),
-    path("register/", views.register, name="register"),
+    path("register/", enhanced_accounts.register, name="register"),
+    path("verify-email/", enhanced_accounts.verify_email_code, name="verify_email_code"),
     path("auth/email-check/", auth_views.email_check, name="auth_email_check"),
     path("auth/login/", auth_views.login_ajax, name="auth_login_ajax"),
     path("notifications/read/", views.notifications_mark_read, name="notifications_mark_read"),
