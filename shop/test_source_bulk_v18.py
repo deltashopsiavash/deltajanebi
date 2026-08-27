@@ -125,6 +125,8 @@ class SourceCatalogV18Tests(TestCase):
 
     def test_home_categories_are_compact_circles(self):
         template = Path("templates/shop/home.html").read_text(encoding="utf-8")
-        self.assertIn(".home-cat-circle{width:76px;height:76px", template)
-        self.assertIn("border-radius:999px!important", template)
-        self.assertIn(".home-cat-circle{width:62px;height:62px}", template)
+        self.assertIn(".home-cat-circle{width:96px;height:96px", template)
+        self.assertIn("border-radius:50%!important", template)
+        self.assertIn("object-fit:contain!important", template)
+        self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", template)
+        self.assertLess(template.index(".home-cat-section{margin-top:30px}"), template.index("{% if banners %}"))
