@@ -4,7 +4,13 @@
 v16 keeps the platform-aware v15 router and restores the legacy /cancel command
 without reintroducing any SanaShop fallback for Delta-specific callbacks.
 """
-from telegram import InlineKeyboardMarkup
+import os
+import sys
+
+RUNTIME_DIR = os.environ.get("DELTAJANEBI_RUNTIME_DIR", "/opt/deltajanebi-bot-runtime")
+if RUNTIME_DIR not in sys.path:
+    sys.path.insert(0, RUNTIME_DIR)
+
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 import external_bot_delta_v15 as v15
