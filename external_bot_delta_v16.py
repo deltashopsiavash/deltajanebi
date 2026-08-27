@@ -4,12 +4,19 @@
 v16 keeps the platform-aware v15 router and restores the legacy /cancel command
 without reintroducing any SanaShop fallback for Delta-specific callbacks.
 """
+import logging
 import os
 import sys
 
 RUNTIME_DIR = os.environ.get("DELTAJANEBI_RUNTIME_DIR", "/opt/deltajanebi-bot-runtime")
 if RUNTIME_DIR not in sys.path:
     sys.path.insert(0, RUNTIME_DIR)
+
+# httpx INFO logs include the full Telegram Bot API URL, which contains the
+# bot token. Keep transport-level request URLs out of journald while retaining
+# our own application INFO logs and actionable WARNING/ERROR messages.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
