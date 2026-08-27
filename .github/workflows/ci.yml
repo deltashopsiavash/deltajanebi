@@ -103,19 +103,24 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py bot_router_regression_v2.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py bot_router_regression_v2.py bot_footer_regression.py
       - name: Mixed DB isolation and native capability contract
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
+      - name: Native footer flow regression
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
       - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
           import external_bot_delta_v16 as entry
           import external_bot_delta_v15 as router
           import delta_bot_native as delta
+          import delta_footer_restore as footer
           assert callable(entry.run) and callable(entry.cancel)
           assert callable(router.routed_site_panel) and callable(router.detect_platform)
           assert callable(delta.callback) and callable(delta.message) and callable(delta.media)
-          print("Delta native multi-site v16 imports: OK")
+          assert callable(footer.install) and callable(footer.normalize_phone)
+          assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
+          print("Delta native multi-site v16 + original footer restoration imports: OK")
           PY
       - name: Installer runtime regression check
         run: |
