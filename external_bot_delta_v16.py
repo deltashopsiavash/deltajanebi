@@ -14,8 +14,13 @@ if RUNTIME_DIR not in sys.path:
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 import external_bot_delta_v15 as v15
+import delta_footer_restore
 
 core = v15.core
+
+# Restore only Delta's original five-stage footer editor. Every other native
+# Delta callback/message continues through delta_bot_native unchanged.
+delta_footer_restore.install()
 
 
 async def cancel(update, context):
