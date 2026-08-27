@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from shop.services.source_bulk_job import run_full_sync
+from shop.services.source_bulk_job_v19 import run_full_sync
 
 
 class Command(BaseCommand):
