@@ -28,14 +28,19 @@ services:
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
+      - backup_data:/app/backups
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/"]
       interval: 10s
       timeout: 5s
       retries: 18
-      start_period: 15s
+      start_period: 20s
 
+  # ربات اصلی در نصب جدید روی سرور خارج اجرا می‌شود. این سرویس فقط برای
+  # سازگاری کامل با نصب قدیمی حفظ شده و با profile به‌صورت دستی قابل اجراست:
+  # docker compose --profile legacy-bot up -d bot
   bot:
+    profiles: ["legacy-bot"]
     image: deltajanebi-app:latest
     restart: unless-stopped
     command: ["python", "manage.py", "telegram_bot_v12"]
@@ -54,7 +59,7 @@ services:
     command: ["python", "manage.py", "sync_loop"]
     env_file: .env
     environment:
-      SOURCE_SYNC_INTERVAL: "1800"
+      SOURCE_SYNC_INTERVAL: ${SOURCE_SYNC_INTERVAL:-1800}
     depends_on:
       web:
         condition: service_healthy

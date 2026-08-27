@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 
@@ -5,9 +7,25 @@ from .iran_locations import province_choices, valid_city
 from .models import Order, SiteSetting, User
 
 
+def normalize_mobile(value):
+    value = str(value or "").strip()
+    fa = "۰۱۲۳۴۵۶۷۸۹"
+    ar = "٠١٢٣٤٥٦٧٨٩"
+    value = value.translate(str.maketrans(fa + ar, "0123456789" * 2))
+    value = re.sub(r"[\s()-]", "", value)
+    if value.startswith("+98"):
+        value = "0" + value[3:]
+    elif value.startswith("0098"):
+        value = "0" + value[4:]
+    elif value.startswith("98") and len(value) == 12:
+        value = "0" + value[2:]
+    return value
+
+
 class RegisterForm(UserCreationForm):
     first_name = forms.CharField(label="نام", max_length=150, required=True)
     last_name = forms.CharField(label="نام خانوادگی", max_length=150, required=True)
+    phone = forms.CharField(label="شماره موبایل", max_length=20, required=True)
 
     class Meta:
         model = User
@@ -18,6 +36,14 @@ class RegisterForm(UserCreationForm):
         if User.objects.filter(email__iexact=email).exists():
             raise forms.ValidationError("این ایمیل قبلاً ثبت شده است.")
         return email
+
+    def clean_phone(self):
+        phone = normalize_mobile(self.cleaned_data.get("phone"))
+        if not re.fullmatch(r"09\d{9}", phone):
+            raise forms.ValidationError("شماره موبایل باید به صورت 09xxxxxxxxx باشد.")
+        if User.objects.filter(phone=phone).exists():
+            raise forms.ValidationError("این شماره موبایل قبلاً ثبت شده است.")
+        return phone
 
 
 class AccountProfileForm(forms.ModelForm):
@@ -42,6 +68,14 @@ class AccountProfileForm(forms.ModelForm):
         if User.objects.exclude(pk=self.instance.pk).filter(email__iexact=email).exists():
             raise forms.ValidationError("این ایمیل قبلاً ثبت شده است.")
         return email
+
+    def clean_phone(self):
+        phone = normalize_mobile(self.cleaned_data.get("phone"))
+        if phone and not re.fullmatch(r"09\d{9}", phone):
+            raise forms.ValidationError("شماره موبایل معتبر نیست.")
+        if phone and User.objects.exclude(pk=self.instance.pk).filter(phone=phone).exists():
+            raise forms.ValidationError("این شماره موبایل قبلاً ثبت شده است.")
+        return phone
 
 
 class CheckoutForm(forms.Form):
