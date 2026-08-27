@@ -108,7 +108,7 @@ def verify_email_code(request):
             user.save(update_fields=["is_active"])
             otp.delete()
             request.session.pop("pending_verification_user_id", None)
-            login(request, user, backend="shop.backends.EmailBackend")
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             messages.success(request, "ایمیل شما تأیید شد و حساب فعال شد.")
             return redirect(_safe_target(request))
 
