@@ -11,9 +11,9 @@ from shop.services import source_sync
 from shop.services.source_sync import sync_category_path
 from shop.source_registry import allowed_url, canonical_hostname
 
-MAX_SITEMAPS = 250
-MAX_DISCOVERED_PRODUCTS = 10000
-MAX_FALLBACK_PAGES = 250
+MAX_SITEMAPS = 1000
+MAX_DISCOVERED_PRODUCTS = 50000
+MAX_FALLBACK_PAGES = 1000
 REQUEST_TIMEOUT = 20
 
 PRODUCT_PATH_PATTERNS = (
@@ -110,6 +110,14 @@ def _parse_sitemap(response):
 
 
 def discover_product_urls(site):
+    """Discover the complete catalog exposed by the registered source.
+
+    Sitemap discovery and HTML listing crawl are deliberately merged. Older
+    versions returned as soon as any sitemap product was found, which meant a
+    partial/marketing sitemap could make «آپلود همه» import only a handful of
+    products. We now keep those URLs and continue through category/shop
+    listings to fill the gaps.
+    """
     queue = []
     for value in _robots_sitemaps(site) + [
         urljoin(site.base_url.rstrip("/") + "/", "sitemap.xml"),
@@ -122,6 +130,18 @@ def discover_product_urls(site):
     products = []
     seen_products = set()
     seen_sitemaps = set()
+    listing_pages = []
+
+    def add_product(value):
+        clean = str(value or "").split("#", 1)[0]
+        if clean and clean not in seen_products and _same_source(clean, site):
+            seen_products.add(clean)
+            products.append(clean)
+
+    def add_listing(value):
+        clean = str(value or "").split("#", 1)[0]
+        if clean and _same_source(clean, site) and clean not in listing_pages:
+            listing_pages.append(clean)
 
     while queue and len(seen_sitemaps) < MAX_SITEMAPS and len(products) < MAX_DISCOVERED_PRODUCTS:
         sitemap_url = queue.pop(0)
@@ -142,20 +162,23 @@ def discover_product_urls(site):
             for loc in locs:
                 if not _same_source(loc, site):
                     continue
-                if _looks_product_url(loc, sitemap_url) and loc not in seen_products:
-                    seen_products.add(loc)
-                    products.append(loc)
+                if _looks_product_url(loc, sitemap_url):
+                    add_product(loc)
                     if len(products) >= MAX_DISCOVERED_PRODUCTS:
                         break
-
-    if products:
-        return products
+                    continue
+                path = (urlparse(loc).path or "").lower()
+                hint = sitemap_url.lower()
+                if any(token in path for token in ("/shop", "/category", "/product-category", "/collections", "/catalog", "/store")) or any(token in hint for token in ("category", "product_cat", "collection")):
+                    add_listing(loc)
 
     page_queue = [
         site.base_url.rstrip("/") + "/",
         urljoin(site.base_url.rstrip("/") + "/", "shop/"),
         urljoin(site.base_url.rstrip("/") + "/", "products/"),
+        *listing_pages,
     ]
+    page_queue = list(dict.fromkeys(page_queue))
     seen_pages = set()
     while page_queue and len(seen_pages) < MAX_FALLBACK_PAGES and len(products) < MAX_DISCOVERED_PRODUCTS:
         page = page_queue.pop(0)
@@ -171,19 +194,25 @@ def discover_product_urls(site):
             if not _same_source(href, site):
                 continue
             if _looks_product_url(href):
-                clean = href.split("#", 1)[0]
-                if clean not in seen_products:
-                    seen_products.add(clean)
-                    products.append(clean)
+                add_product(href)
+                if len(products) >= MAX_DISCOVERED_PRODUCTS:
+                    break
                 continue
-            path = (urlparse(href).path or "").lower()
+            parsed = urlparse(href)
+            path = (parsed.path or "").lower()
+            query = (parsed.query or "").lower()
             rel = " ".join(anchor.get("rel") or []).lower()
             classes = " ".join(anchor.get("class") or []).lower()
             text = anchor.get_text(" ", strip=True).lower()
-            looks_listing = any(token in path for token in ("/shop", "/category", "/product-category", "/collections", "/page/"))
-            looks_next = "next" in rel or "next" in classes or text in {"بعدی", "next", ">", "»"}
-            if (looks_listing or looks_next) and href not in seen_pages and href not in page_queue:
-                page_queue.append(href)
+            looks_listing = any(token in path for token in (
+                "/shop", "/category", "/product-category", "/collections",
+                "/catalog", "/store", "/page/",
+            ))
+            looks_paged_query = any(token in query for token in ("page=", "paged=", "product-page="))
+            looks_next = "next" in rel or "next" in classes or text in {"بعدی", "صفحه بعد", "next", ">", "»"}
+            clean = href.split("#", 1)[0]
+            if (looks_listing or looks_paged_query or looks_next) and clean not in seen_pages and clean not in page_queue:
+                page_queue.append(clean)
 
     return products
 
@@ -232,8 +261,6 @@ def upsert_source_product(site, url):
     product = _existing_for_source(site, canonical_url, data) or _existing_for_source(site, url, data)
     created = product is None
 
-    # Some stores hide price when an item becomes unavailable. Keep the last known price
-    # for an existing product; a brand-new item with no price is skipped until a real price appears.
     incoming_price = int(data.get("price") or 0)
     if created and not incoming_price:
         raise CatalogSkip("محصول جدید فعلاً ناموجود و بدون قیمت قابل استخراج است؛ تا نمایش قیمت از ورود خودکار رد شد.")
