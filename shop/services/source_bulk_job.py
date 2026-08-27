@@ -6,14 +6,15 @@ from pathlib import Path
 
 from django.utils import timezone
 
-from shop.models import SourceSite
+from shop.models import Product, SourceSite
+from shop.services import source_sync
 from shop.services.source_catalog import (
     CatalogSkip,
     discover_product_urls,
     source_products,
     upsert_source_product_with_changes,
 )
-from shop.services.source_sync import SourceNotProductError
+from shop.services.source_sync import SourceNotProductError, sync_category_path
 
 JOB_DIR = Path(os.environ.get("DELTA_SOURCE_SYNC_JOB_DIR", "/tmp/deltajanebi-source-sync-jobs"))
 LOCK_FILE = JOB_DIR / "active.lock"
@@ -70,6 +71,44 @@ def create_queued_job(job_id):
 
 def _existing_urls(site):
     return list(source_products(site).exclude(source_url="").values_list("source_url", flat=True))
+
+
+def _import_unpriced_catalog_product(site, url):
+    """Keep a real source product in the catalog even when its price is hidden.
+
+    It is saved with price/stock zero so it cannot be bought for free. A later
+    normal sync fills price and stock as soon as the source exposes them.
+    """
+    data = source_sync.scrape_product(url)
+    canonical_url = data.get("source_url") or url
+    existing = Product.objects.filter(source_type=Product.SYNCED, source_url=canonical_url).first()
+    if existing:
+        return existing, False
+
+    category = sync_category_path(data.get("categories") or [])
+    sku = str(data.get("sku") or "").strip() or None
+    if sku and Product.objects.filter(sku=sku).exists():
+        sku = None
+    product = Product.objects.create(
+        category=category,
+        name=data["name"],
+        description=data.get("description", ""),
+        source_type=Product.SYNCED,
+        source_url=canonical_url,
+        source_product_code=str(data.get("sku") or "")[:100],
+        source_price=0,
+        price=0,
+        stock=0,
+        image_url=data.get("image_url", ""),
+        gallery=data.get("gallery") or [],
+        specs=data.get("specs") or {},
+        sku=sku,
+        markup_type=site.default_markup_type,
+        markup_value=site.default_markup_value,
+        last_synced_at=timezone.now(),
+        sync_error="قیمت منبع فعلاً قابل استخراج نیست؛ در همگام‌سازی بعدی دوباره بررسی می‌شود.",
+    )
+    return product, True
 
 
 def run_full_sync(job_id):
@@ -136,7 +175,26 @@ def run_full_sync(job_id):
                         state["created"] += 1
                     if created or changes:
                         state["changed"] += 1
-                except (SourceNotProductError, CatalogSkip) as exc:
+                except CatalogSkip as exc:
+                    # Upload-all means the complete real catalog. If a valid
+                    # product hides its price, retain it safely at stock/price 0
+                    # instead of silently dropping it from Delta.
+                    try:
+                        _, created = _import_unpriced_catalog_product(site, url)
+                        if created:
+                            state["created"] += 1
+                            state["changed"] += 1
+                        if len(state["warnings"]) < MAX_WARNINGS:
+                            state["warnings"].append(f"{site.name}: بدون قیمت وارد شد: {str(exc)[:120]}")
+                    except SourceNotProductError as nested:
+                        state["skipped"] += 1
+                        if len(state["warnings"]) < MAX_WARNINGS:
+                            state["warnings"].append(f"{site.name}: {str(nested)[:180]}")
+                    except Exception as nested:
+                        state["errors"] += 1
+                        if len(state["warnings"]) < MAX_WARNINGS:
+                            state["warnings"].append(f"{site.name}: import-unpriced: {str(nested)[:160]}")
+                except SourceNotProductError as exc:
                     state["skipped"] += 1
                     if len(state["warnings"]) < MAX_WARNINGS:
                         state["warnings"].append(f"{site.name}: {str(exc)[:180]}")
