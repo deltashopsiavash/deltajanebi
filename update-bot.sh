@@ -74,12 +74,13 @@ set +a
 export DELTAJANEBI_RUNTIME_DIR="${DELTAJANEBI_RUNTIME_DIR:-$RUNTIME_DIR}"
 export PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "==> Preflight: syntax/import/router"
+echo "==> Preflight: syntax/import/router/source controls"
 "$APP_DIR/.venv/bin/python" -m py_compile \
   "$APP_DIR/external_bot_delta_v15.py" \
   "$APP_DIR/external_bot_delta_v16.py" \
   "$APP_DIR/delta_bot_native.py" \
-  "$APP_DIR/delta_footer_restore.py"
+  "$APP_DIR/delta_footer_restore.py" \
+  "$APP_DIR/delta_source_restore.py"
 (
   cd "$APP_DIR"
   "$APP_DIR/.venv/bin/python" - <<'PY'
@@ -87,11 +88,15 @@ import external_bot_delta_v16 as bot
 import external_bot_delta_v15 as router
 import delta_bot_native as delta
 import delta_footer_restore as footer
+import delta_source_restore as source
 assert callable(bot.run)
 assert callable(router.routed_site_panel)
 assert callable(delta.callback)
 assert callable(footer.install)
-print("Delta native multi-site bot v16 preflight: OK")
+assert callable(source.install)
+assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
+assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
+print("Delta native multi-site bot source-control preflight: OK")
 PY
 )
 
@@ -133,9 +138,9 @@ fi
 DONE=1
 trap - ERR EXIT INT TERM
 rm -f "$SERVICE_BACKUP"
-echo "✅ ربات DeltaJanebi v16 با موفقیت آپدیت شد."
+echo "✅ ربات DeltaJanebi با موفقیت آپدیت شد."
 echo "✅ preflight قبل از توقف انجام شد؛ در خطای آپدیت نسخه قبلی خودکار برمی‌گردد."
-echo "✅ Router چندسایتی فعال است؛ Delta و SanaShop پنل و callback مستقل دارند."
+echo "✅ Router چندسایتی و کنترل‌های اختصاصی منبع Delta فعال هستند."
 echo "✅ توکن، مالک، دیتابیس اتصال سایت‌ها و مدیران حفظ شدند."
 echo "نسخه Delta: ${NEW_APP_SHA:0:7}"
 echo "نسخه runtime: ${NEW_RUNTIME_SHA:0:7}"
