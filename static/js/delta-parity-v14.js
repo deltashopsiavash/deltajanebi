@@ -13,11 +13,12 @@
 
   function setupStories(){
     const dialog=document.getElementById('product-story-dialog');
-    if(!dialog)return;
+    if(!dialog||dialog.dataset.ready==='1')return;
+    dialog.dataset.ready='1';
     const view=document.getElementById('product-story-view');
     const title=document.getElementById('product-story-title');
     const target=document.getElementById('product-story-target');
-    const close=()=>{try{dialog.close()}catch(_){dialog.removeAttribute('open')} if(view)view.innerHTML='';document.body.classList.remove('modal-open')};
+    const close=()=>{try{dialog.close()}catch(_){dialog.removeAttribute('open')}if(view)view.innerHTML='';document.body.classList.remove('modal-open')};
     document.querySelectorAll('[data-story-open]').forEach(button=>button.addEventListener('click',()=>{
       if(!view)return;
       view.innerHTML='';
@@ -44,11 +45,14 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded',()=>{
+  function init(){
     ensureProgressivePhone();
     setTimeout(ensureProgressivePhone,100);
     setupStories();
     polishPasswordButtons();
     setTimeout(polishPasswordButtons,120);
-  });
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});
+  else init();
 })();
