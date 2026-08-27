@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "fix/**"]
   pull_request:
     branches: [main]
 
@@ -41,7 +41,7 @@ jobs:
         run: python manage.py migrate --noinput
       - name: Delta bot API smoke test
         run: |
-          python manage.py shell -c 'import json; from django.test import Client; c=Client(); r=c.post("/api/bot/v1/", data=json.dumps({"action":"ping","payload":{}}), content_type="application/json", HTTP_AUTHORIZATION="Bearer "+__import__("os").environ["DELTAJANEBI_BOT_API_KEY"]); assert r.status_code==200, r.content; d=r.json(); assert d.get("ok") is True, d; print("Delta bot API ping: OK")'
+          python manage.py shell -c 'import json,os; from django.test import Client; c=Client(); r=c.post("/api/bot/v1/", data=json.dumps({"action":"ping","payload":{}}), content_type="application/json", HTTP_AUTHORIZATION="Bearer "+os.environ["DELTAJANEBI_BOT_API_KEY"]); assert r.status_code==200, r.content; d=r.json(); assert d.get("ok") is True, d; s=d.get("site") or {}; assert s.get("platform")=="deltajanebi", s; assert int(s.get("version") or 0)>=15, s; print("Delta native bot API ping: OK", s)'
       - name: Django tests
         run: python manage.py test --verbosity 1
       - name: README distribution commands
@@ -84,7 +84,7 @@ jobs:
           docker compose config -q
 
   external-bot:
-    name: External bot runtime
+    name: Native multi-site external bot
     runs-on: ubuntu-latest
     env:
       TELEGRAM_BOT_TOKEN: "123456789:CI_TOKEN_VALUE_NOT_USED_ON_NETWORK"
@@ -99,27 +99,32 @@ jobs:
           python-version: "3.12"
       - name: Install external bot dependencies
         run: pip install python-telegram-bot==22.3 httpx==0.28.1
-      - name: Fetch stable SanaShop bot runtime
+      - name: Fetch SanaShop runtime
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
-      - name: Compile Delta external bot
-        run: python -m py_compile external_bot_delta_v14.py
-      - name: Import and menu smoke test
+      - name: Compile native router runtime
+        run: |
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py bot_router_regression.py
+      - name: Mixed DB isolation and native capability contract
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression.py
+      - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
-          import external_bot_delta_v14 as bot
-          assert callable(bot.run)
-          assert callable(bot.callback)
-          assert callable(bot.site_panel)
-          panel = bot.site_panel({"id": 1, "name": "Delta CI", "base_url": "https://example.com"}, 1)
-          labels = [button.text for row in panel.inline_keyboard for button in row]
-          required = {"🛍 مدیریت محصولات", "🧭 تنظیمات مدیریتی", "👥 کاربران", "🔔 اطلاع‌رسانی", "💾 بکاپ", "⚙️ تنظیمات سایت"}
-          assert required.issubset(set(labels)), labels
-          print("Delta external bot v14 import/menu: OK")
+          import external_bot_delta_v16 as entry
+          import external_bot_delta_v15 as router
+          import delta_bot_native as delta
+          assert callable(entry.run) and callable(entry.cancel)
+          assert callable(router.routed_site_panel) and callable(router.detect_platform)
+          assert callable(delta.callback) and callable(delta.message) and callable(delta.media)
+          print("Delta native multi-site v16 imports: OK")
           PY
       - name: Installer runtime regression check
         run: |
-          grep -q 'external_bot_delta_v14.py' install-bot.sh
-          grep -q 'external_bot_delta_v14.py' update-bot.sh
+          grep -q 'external_bot_delta_v16.py' install-bot.sh
+          grep -q 'external_bot_delta_v16.py' update-bot.sh
+          grep -q 'external_bot_delta_v15.py' install-bot.sh
+          grep -q 'external_bot_delta_v15.py' update-bot.sh
           grep -q '/var/lib/deltajanebi-bot' install-bot.sh
           grep -q 'deltashopsiavash/deltajanebi.git' install-bot.sh
           grep -q 'deltashopsiavash/deltajanebi.git' update-bot.sh
+          grep -q 'deltashopsiavash/sanashop.git' install-bot.sh
+          grep -q 'deltashopsiavash/sanashop.git' update-bot.sh
