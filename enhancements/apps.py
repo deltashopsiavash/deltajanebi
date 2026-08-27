@@ -19,3 +19,5 @@ class EnhancementsConfig(AppConfig):
         Product.is_amazing_active = property(is_amazing_active)
         Product.promotion_label = property(promotion_label)
         Product.effective_price = property(effective_price)
+
+        from . import signals  # noqa: F401
