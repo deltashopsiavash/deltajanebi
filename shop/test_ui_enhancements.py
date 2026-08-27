@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .forms import RegisterForm
-from .models import Category, Product, User
+from .models import Banner, Category, Product, User
 
 
 class ProgressiveAuthTests(TestCase):
@@ -40,6 +40,23 @@ class CategoryBubbleTests(TestCase):
         self.assertContains(response, 'class="subcat-bubbles"')
         self.assertContains(response, 'class="subcat-circle"')
         self.assertContains(response, "کابل شارژ")
+
+    def test_home_categories_are_circular_even_without_banner(self):
+        Category.objects.create(name="جانبی رایانه", slug="computer-accessories", image_url="https://example.com/category-logo.png")
+        response = self.client.get(reverse("home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Banner.objects.exists())
+        self.assertContains(response, 'class="home-cat-circle"')
+        self.assertContains(response, 'object-fit:contain!important')
+        self.assertContains(response, 'grid-template-columns:repeat(3,minmax(0,1fr))')
+        self.assertContains(response, 'src="https://example.com/category-logo.png"')
+
+    def test_home_category_css_does_not_depend_on_banner_block(self):
+        Category.objects.create(name="موبایل", slug="mobile")
+        response = self.client.get(reverse("home"))
+        html = response.content.decode("utf-8")
+        self.assertIn(".home-cat-section{margin-top:30px}", html)
+        self.assertNotIn('id="home-banner-carousel"', html)
 
     def test_global_enhancement_assets_are_loaded(self):
         response = self.client.get(reverse("home"))
