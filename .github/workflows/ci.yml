@@ -103,11 +103,13 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py bot_router_regression_v2.py bot_footer_regression.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py
       - name: Mixed DB isolation and native capability contract
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Native footer flow regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
+      - name: Native source controls regression
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_source_regression.py
       - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
@@ -115,12 +117,15 @@ jobs:
           import external_bot_delta_v15 as router
           import delta_bot_native as delta
           import delta_footer_restore as footer
+          import delta_source_restore as source
           assert callable(entry.run) and callable(entry.cancel)
           assert callable(router.routed_site_panel) and callable(router.detect_platform)
           assert callable(delta.callback) and callable(delta.message) and callable(delta.media)
           assert callable(footer.install) and callable(footer.normalize_phone)
+          assert callable(source.install) and callable(source.callback)
           assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
-          print("Delta native multi-site v16 + original footer restoration imports: OK")
+          assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
+          print("Delta native multi-site + footer + source controls imports: OK")
           PY
       - name: Installer runtime regression check
         run: |
@@ -128,6 +133,8 @@ jobs:
           grep -q 'external_bot_delta_v16.py' update-bot.sh
           grep -q 'external_bot_delta_v15.py' install-bot.sh
           grep -q 'external_bot_delta_v15.py' update-bot.sh
+          grep -q 'delta_source_restore.py' install-bot.sh
+          grep -q 'delta_source_restore.py' update-bot.sh
           grep -q '/var/lib/deltajanebi-bot' install-bot.sh
           grep -q 'deltashopsiavash/deltajanebi.git' install-bot.sh
           grep -q 'deltashopsiavash/deltajanebi.git' update-bot.sh
