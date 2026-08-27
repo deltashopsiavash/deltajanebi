@@ -50,6 +50,20 @@ DELTAJANEBI_RUNTIME_DIR=$RUNTIME_DIR
 EOF
 chmod 600 /etc/deltajanebi-bot.env
 
+set -a
+# shellcheck disable=SC1091
+. /etc/deltajanebi-bot.env
+set +a
+export PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"
+.venv/bin/python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py
+.venv/bin/python - <<'PY'
+import external_bot_delta_v16 as bot
+import external_bot_delta_v15 as router
+import delta_bot_native as delta
+assert callable(bot.run) and callable(router.routed_site_panel) and callable(delta.callback)
+print("Delta native multi-site bot v16: OK")
+PY
+
 cat >/etc/systemd/system/deltajanebi-bot.service <<EOF
 [Unit]
 Description=DeltaJanebi External Multi-site Telegram Bot
@@ -60,7 +74,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=/etc/deltajanebi-bot.env
-ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/external_bot_delta_v14.py
+ExecStart=$APP_DIR/.venv/bin/python $APP_DIR/external_bot_delta_v16.py
 Restart=always
 RestartSec=3
 User=root
@@ -80,8 +94,9 @@ if ! systemctl is-active --quiet deltajanebi-bot; then
 fi
 
 echo
-echo "✅ ربات خارجی DeltaJanebi نصب و Telegram تست شد."
-echo "✅ اطلاعات اتصال سایت‌ها در /var/lib/deltajanebi-bot حفظ می‌شود."
-echo "داخل تلگرام: /start → 🔗 اتصال سایت → آدرس سایت → DELTAJANEBI_BOT_API_KEY"
+echo "✅ ربات خارجی DeltaJanebi v16 نصب و Telegram تست شد."
+echo "✅ Router چندسایتی، پنل Native Delta و پنل SanaShop از هم جدا هستند."
+echo "✅ اطلاعات اتصال سایت‌ها و مدیران در /var/lib/deltajanebi-bot حفظ می‌شود."
+echo "داخل تلگرام: /start → 🔗 اتصال سایت → آدرس سایت → API Key همان سایت"
 echo "وضعیت: systemctl status deltajanebi-bot --no-pager"
 echo "لاگ:    journalctl -u deltajanebi-bot -f"
