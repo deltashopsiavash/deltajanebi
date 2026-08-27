@@ -55,13 +55,18 @@ set -a
 . /etc/deltajanebi-bot.env
 set +a
 export PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"
-.venv/bin/python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py
+.venv/bin/python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py
 .venv/bin/python - <<'PY'
 import external_bot_delta_v16 as bot
 import external_bot_delta_v15 as router
 import delta_bot_native as delta
+import delta_footer_restore as footer
+import delta_source_restore as source
 assert callable(bot.run) and callable(router.routed_site_panel) and callable(delta.callback)
-print("Delta native multi-site bot v16: OK")
+assert callable(footer.install) and callable(source.install)
+assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
+assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
+print("Delta native multi-site bot v18 source controls: OK")
 PY
 
 cat >/etc/systemd/system/deltajanebi-bot.service <<EOF
@@ -94,8 +99,8 @@ if ! systemctl is-active --quiet deltajanebi-bot; then
 fi
 
 echo
-echo "✅ ربات خارجی DeltaJanebi v16 نصب و Telegram تست شد."
-echo "✅ Router چندسایتی، پنل Native Delta و پنل SanaShop از هم جدا هستند."
+echo "✅ ربات خارجی DeltaJanebi نصب و Telegram تست شد."
+echo "✅ Router چندسایتی و کنترل‌های اختصاصی منبع Delta فعال هستند."
 echo "✅ اطلاعات اتصال سایت‌ها و مدیران در /var/lib/deltajanebi-bot حفظ می‌شود."
 echo "داخل تلگرام: /start → 🔗 اتصال سایت → آدرس سایت → API Key همان سایت"
 echo "وضعیت: systemctl status deltajanebi-bot --no-pager"
