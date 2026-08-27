@@ -13,3 +13,25 @@
   <div class="product-story-view" id="product-story-view"></div>
   <div class="product-story-footer"><strong id="product-story-title"></strong><a class="btn" id="product-story-target" href="#">مشاهده محصول</a></div>
 </dialog>
+<script>
+(function(){
+  const dialog=document.getElementById('product-story-dialog');
+  if(!dialog)return;
+  const view=document.getElementById('product-story-view'),title=document.getElementById('product-story-title'),target=document.getElementById('product-story-target');
+  document.querySelectorAll('[data-story-open]').forEach(btn=>btn.addEventListener('click',()=>{
+    const media=btn.dataset.media,type=btn.dataset.type;
+    view.replaceChildren();
+    const node=document.createElement(type==='video'?'video':'img');
+    node.src=media;
+    if(type==='video'){node.controls=true;node.autoplay=true;node.playsInline=true;}
+    node.alt=btn.dataset.title||'';
+    view.appendChild(node);
+    title.textContent=btn.dataset.title||'';
+    target.href=btn.dataset.target||'#';
+    if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','open');
+  }));
+  function close(){const video=view.querySelector('video');if(video)video.pause();dialog.close?dialog.close():dialog.removeAttribute('open');view.replaceChildren();}
+  dialog.querySelector('[data-story-close]').addEventListener('click',close);
+  dialog.addEventListener('click',e=>{if(e.target===dialog)close();});
+})();
+</script>
