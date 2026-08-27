@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    name: Django + installers
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-key-not-for-production
+      DEBUG: "0"
+      DOMAIN: localhost
+      ALLOWED_HOSTS: testserver,localhost,127.0.0.1
+      DELTAJANEBI_BOT_API_KEY: ci-deltajanebi-api-key-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Python compile check
+        run: python -m compileall -q config shop enhancements
+      - name: Shell syntax check
+        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh
+      - name: Django system check
+        run: python manage.py check --deploy --fail-level ERROR
+      - name: Migration drift check
+        run: python manage.py makemigrations --check --dry-run
+      - name: Apply migrations on clean SQLite
+        run: python manage.py migrate --noinput
+      - name: Delta bot API smoke test
+        run: |
+          python manage.py shell -c 'import json; from django.test import Client; c=Client(); r=c.post("/api/bot/v1/", data=json.dumps({"action":"ping","payload":{}}), content_type="application/json", HTTP_AUTHORIZATION="Bearer "+__import__("os").environ["DELTAJANEBI_BOT_API_KEY"]); assert r.status_code==200, r.content; d=r.json(); assert d.get("ok") is True, d; print("Delta bot API ping: OK")'
+      - name: Django tests
+        run: python manage.py test --verbosity 1
+      - name: README distribution commands
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("README.md").read_text()
+          expected = [
+              "deltajanebi/main/install-site.sh",
+              "deltajanebi/main/install-bot.sh",
+              "deltajanebi/main/update-site.sh",
+              "deltajanebi/main/update-bot.sh",
+          ]
+          assert all(x in text for x in expected)
+          assert "install.sh | sudo bash" not in text
+          assert "sudo deltajanebi-update" not in text
+          print("README install/update commands: OK")
+          PY
+      - name: Docker Compose config
+        run: |
+          cat > .env <<'EOF'
+          DOMAIN=example.com
+          DJANGO_SECRET_KEY=compose-ci-secret
+          DEBUG=0
+          ALLOWED_HOSTS=example.com,localhost,127.0.0.1
+          POSTGRES_DB=deltajanebi
+          POSTGRES_USER=deltajanebi
+          POSTGRES_PASSWORD=compose-ci-password
+          DATABASE_URL=postgresql://deltajanebi:compose-ci-password@db:5432/deltajanebi
+          DELTAJANEBI_BOT_API_KEY=compose-ci-api-key
+          SMTP_HOST=smtp.resend.com
+          SMTP_PORT=587
+          SMTP_USER=resend
+          SMTP_PASSWORD=compose-ci-password
+          SMTP_USE_TLS=1
+          DEFAULT_FROM_EMAIL=support@example.com
+          SOURCE_SYNC_INTERVAL=1800
+          STORE_NAME=DeltaJanebi
+          EOF
+          docker compose config -q
+
+  external-bot:
+    name: External bot runtime
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: "123456789:CI_TOKEN_VALUE_NOT_USED_ON_NETWORK"
+      TELEGRAM_OWNER_ID: "1"
+      BOT_DB_PATH: /tmp/deltajanebi-ci-bot.sqlite3
+      BOT_LOCK_PATH: /tmp/deltajanebi-ci-bot.lock
+      DELTAJANEBI_RUNTIME_DIR: /tmp/sanashop-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install external bot dependencies
+        run: pip install python-telegram-bot==22.3 httpx==0.28.1
+      - name: Fetch stable SanaShop bot runtime
+        run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
+      - name: Compile Delta external bot
+        run: python -m py_compile external_bot_delta_v14.py
+      - name: Import and menu smoke test
+        run: |
+          PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
+          import external_bot_delta_v14 as bot
+          assert callable(bot.run)
+          assert callable(bot.callback)
+          assert callable(bot.site_panel)
+          panel = bot.site_panel({"id": 1, "name": "Delta CI", "base_url": "https://example.com"}, 1)
+          labels = [button.text for row in panel.inline_keyboard for button in row]
+          required = {"🛍 مدیریت محصولات", "🧭 تنظیمات مدیریتی", "👥 کاربران", "🔔 اطلاع‌رسانی", "💾 بکاپ", "⚙️ تنظیمات سایت"}
+          assert required.issubset(set(labels)), labels
+          print("Delta external bot v14 import/menu: OK")
+          PY
+      - name: Installer runtime regression check
+        run: |
+          grep -q 'external_bot_delta_v14.py' install-bot.sh
+          grep -q 'external_bot_delta_v14.py' update-bot.sh
+          grep -q '/var/lib/deltajanebi-bot' install-bot.sh
+          grep -q 'deltashopsiavash/deltajanebi.git' install-bot.sh
+          grep -q 'deltashopsiavash/deltajanebi.git' update-bot.sh
