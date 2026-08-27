@@ -64,6 +64,29 @@ class SourceCatalogV18Tests(TestCase):
         self.assertIn("https://source.example/product/two/", urls)
         self.assertEqual(len(set(urls)), len(urls))
 
+    def test_upload_all_keeps_valid_unpriced_product_safely(self):
+        data = {
+            "name": "کابل بدون قیمت",
+            "description": "",
+            "source_url": "https://source.example/product/unpriced/",
+            "sku": "UNPRICED-1",
+            "price": 0,
+            "stock": 8,
+            "image_url": "https://source.example/media/unpriced.jpg",
+            "gallery": [],
+            "specs": {},
+            "categories": ["کابل", "Type-C"],
+        }
+        with patch("shop.services.source_bulk_job.source_sync.scrape_product", return_value=data):
+            product, created = source_bulk_job._import_unpriced_catalog_product(self.site, data["source_url"])
+
+        self.assertTrue(created)
+        self.assertEqual(product.source_url, data["source_url"])
+        self.assertEqual(product.price, 0)
+        self.assertEqual(product.stock, 0)
+        self.assertEqual(product.category.name, "Type-C")
+        self.assertIn("قیمت منبع", product.sync_error)
+
     def test_background_sync_api_returns_immediately_and_status_is_pollable(self):
         env = patch.dict(os.environ, {"DELTAJANEBI_BOT_API_KEY": self.API_KEY})
         env.start()
