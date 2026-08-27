@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Final DeltaJanebi multi-site entrypoint.
 
-v16 keeps the platform-aware v15 router and restores the legacy /cancel command
+v16 keeps the platform-aware v15 router and restores Delta-native additions
 without reintroducing any SanaShop fallback for Delta-specific callbacks.
 """
 import logging
@@ -12,9 +12,8 @@ RUNTIME_DIR = os.environ.get("DELTAJANEBI_RUNTIME_DIR", "/opt/deltajanebi-bot-ru
 if RUNTIME_DIR not in sys.path:
     sys.path.insert(0, RUNTIME_DIR)
 
-# httpx INFO logs include the full Telegram Bot API URL, which contains the
-# bot token. Keep transport-level request URLs out of journald while retaining
-# our own application INFO logs and actionable WARNING/ERROR messages.
+# httpx INFO logs include the full Telegram Bot API URL. Keep transport-level
+# request URLs out of journald while retaining actionable WARNING/ERROR logs.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
@@ -25,9 +24,13 @@ import delta_footer_restore
 
 core = v15.core
 
-# Restore only Delta's original five-stage footer editor. Every other native
-# Delta callback/message continues through delta_bot_native unchanged.
+# Install restorations in a deliberate chain. Source restoration is imported
+# only after footer restoration has wrapped native.callback, so it delegates
+# every unrelated callback through the already-restored footer flow.
 delta_footer_restore.install()
+import delta_source_restore  # noqa: E402
+
+delta_source_restore.install()
 
 
 async def cancel(update, context):
