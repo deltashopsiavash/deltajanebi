@@ -67,12 +67,17 @@ class SourcePriceParserTests(SimpleTestCase):
 
 class SourceUnavailablePriceTests(TestCase):
     def setUp(self):
-        self.site = SourceSite.objects.create(
-            name="همراه دوم تست",
-            base_url="https://hamrahedovom.ir",
+        # Migration 0010 intentionally seeds hamrahedovom.ir on every fresh database.
+        # Reuse that production seed in tests instead of violating hostname uniqueness.
+        self.site, _ = SourceSite.objects.update_or_create(
             hostname="hamrahedovom.ir",
-            default_markup_type=SourceSite.MARKUP_PERCENT,
-            default_markup_value=10,
+            defaults={
+                "name": "همراه دوم تست",
+                "base_url": "https://hamrahedovom.ir",
+                "default_markup_type": SourceSite.MARKUP_PERCENT,
+                "default_markup_value": 10,
+                "is_active": True,
+            },
         )
 
     def test_existing_unavailable_product_keeps_last_known_price(self):
