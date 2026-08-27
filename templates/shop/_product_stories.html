@@ -1,0 +1,15 @@
+<section class="wrap product-stories" aria-label="معرفی محصولات">
+  <div class="product-stories-row">
+    {% for story in product_stories %}
+    <button type="button" class="product-story" data-story-open data-story-id="{{ story.id }}" data-title="{{ story.title|escape }}" data-type="{{ story.media_type }}" data-media="{{ story.media.url }}" data-target="{{ story.target_url }}">
+      <span class="product-story-ring"><span class="product-story-media">{% if story.media_type == 'video' %}<video src="{{ story.media.url }}" muted preload="metadata"></video><i>▶</i>{% else %}<img src="{{ story.media.url }}" alt="{{ story.title }}" loading="lazy">{% endif %}</span></span>
+      <span class="product-story-title">{{ story.title }}</span>
+    </button>
+    {% endfor %}
+  </div>
+</section>
+<dialog class="product-story-dialog" id="product-story-dialog">
+  <button type="button" class="product-story-close" data-story-close aria-label="بستن">×</button>
+  <div class="product-story-view" id="product-story-view"></div>
+  <div class="product-story-footer"><strong id="product-story-title"></strong><a class="btn" id="product-story-target" href="#">مشاهده محصول</a></div>
+</dialog>
