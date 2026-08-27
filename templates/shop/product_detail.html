@@ -17,10 +17,10 @@
       {% if product.available_stock %}<div class="pd-stock-count">{{ product.available_stock }} عدد موجود</div>{% endif %}
       <div class="pd-buy-divider"></div>
       <div class="pd-price-label">قیمت فروش</div>
-      {% if product.is_sale_active %}
-        <div class="sale-price-block"><div class="pd-price"><strong>{{ product.effective_price|money }}</strong><span>تومان</span></div><span class="sale-badge">پیشنهاد ویژه</span></div>
-        <div class="sale-old-price">{{ product.price|money }} تومان</div>
-        {% if product.sale_remaining_seconds %}<div class="sale-timer" data-sale-seconds="{{ product.sale_remaining_seconds }}">00:00:00</div>{% endif %}
+      {% if product.promotion_label %}
+        <div class="sale-price-block"><div class="pd-price"><strong>{{ product.effective_price|money }}</strong><span>تومان</span></div><span class="sale-badge promotion-badge {% if product.promotion_label == 'شگفت‌انگیز' %}is-amazing{% else %}is-discount{% endif %}">{{ product.promotion_label }}</span></div>
+        <div class="sale-old-price"><del>{{ product.price|money }} تومان</del></div>
+        {% if product.is_sale_active and not product.is_amazing_active and product.sale_remaining_seconds %}<div class="sale-timer" data-sale-seconds="{{ product.sale_remaining_seconds }}">00:00:00</div>{% endif %}
       {% else %}
         <div class="pd-price"><strong>{{ product.price|money }}</strong><span>تومان</span></div>
       {% endif %}
