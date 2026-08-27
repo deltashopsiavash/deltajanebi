@@ -93,8 +93,16 @@
     });
   }
 
+  function loadParityFixes(){
+    if(document.getElementById('delta-parity-v14-script'))return;
+    const script=document.createElement('script');
+    script.id='delta-parity-v14-script';
+    script.src='/static/js/delta-parity-v14.js?v=14';
+    document.head.appendChild(script);
+  }
+
   document.addEventListener('DOMContentLoaded',()=>{
-    setupTypewriter();setupNotifications();setupEyes();setupAjaxLogin();
+    setupTypewriter();setupNotifications();setupEyes();setupAjaxLogin();loadParityFixes();
     setTimeout(()=>{setupEyes();setupAjaxLogin()},80);
   });
 })();
