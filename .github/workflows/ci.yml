@@ -103,9 +103,9 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py bot_router_regression.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py bot_router_regression_v2.py
       - name: Mixed DB isolation and native capability contract
-        run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression.py
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
