@@ -17,21 +17,25 @@ from shop.services.source_identity_v21 import (
 
 class SourceIdentityV21Tests(TestCase):
     def setUp(self):
-        self.hamrah = SourceSite.objects.create(
-            name="همراه دوم",
-            base_url="https://hamrahedovom.ir",
+        self.hamrah, _ = SourceSite.objects.update_or_create(
             hostname="hamrahedovom.ir",
-            is_active=True,
-            default_markup_type=SourceSite.MARKUP_PERCENT,
-            default_markup_value=10,
+            defaults={
+                "name": "همراه دوم",
+                "base_url": "https://hamrahedovom.ir",
+                "is_active": True,
+                "default_markup_type": SourceSite.MARKUP_PERCENT,
+                "default_markup_value": 10,
+            },
         )
-        self.marivan = SourceSite.objects.create(
-            name="مریوان فون",
-            base_url="https://marivanphone.com",
+        self.marivan, _ = SourceSite.objects.update_or_create(
             hostname="marivanphone.com",
-            is_active=True,
-            default_markup_type=SourceSite.MARKUP_PERCENT,
-            default_markup_value=5,
+            defaults={
+                "name": "مریوان فون",
+                "base_url": "https://marivanphone.com",
+                "is_active": True,
+                "default_markup_type": SourceSite.MARKUP_PERCENT,
+                "default_markup_value": 5,
+            },
         )
 
     def _charger(self, url, name, stock, price, model="EP-T2510"):
@@ -85,7 +89,6 @@ class SourceIdentityV21Tests(TestCase):
         self.assertEqual(Product.objects.filter(source_type=Product.SYNCED, is_active=True).count(), 1)
         self.assertEqual(ProductSourceOffer.objects.filter(product=product, is_active=True).count(), 2)
         self.assertEqual(product.stock, 8)
-        # Cheapest final sale price: 480,000 + 5% = 504,000.
         self.assertEqual(product.price, 504_000)
         self.assertEqual(product.category.name, "شارژر")
         self.assertEqual(product.category.parent.name, "شارژر و آداپتور")
