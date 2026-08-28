@@ -1,7 +1,7 @@
 from django.urls import path
 
 from enhancements import account_views as enhanced_accounts
-from enhancements.site_api_v17 import bot_api
+from enhancements.site_api_v18 import bot_api
 from . import auth_views, views, wallet_checkout
 
 urlpatterns = [
@@ -15,7 +15,7 @@ urlpatterns = [
     path("auth/email-check/", auth_views.email_check, name="auth_email_check"),
     path("auth/login/", auth_views.login_ajax, name="auth_login_ajax"),
     path("notifications/read/", views.notifications_mark_read, name="notifications_mark_read"),
-    path("cart/", views.cart_view, name="cart"),
+    path("cart/", views.cart_view, name="cart_view"),
     path("cart/data/", views.cart_data, name="cart_data"),
     path("cart/add/<int:product_id>/", views.cart_add, name="cart_add"),
     path("cart/set/<int:product_id>/", views.cart_set, name="cart_set"),
