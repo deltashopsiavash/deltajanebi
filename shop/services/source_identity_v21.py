@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from shop.models import Product, SourceSite
 from shop.source_offer_models import ProductSourceOffer
-from shop.services.category_v21 import canonical_path, sync_category_path
+from shop.services.category_v21 import sync_category_path
 
 
 _TRANSLATION = str.maketrans({
@@ -26,6 +26,11 @@ _STOP_NAME = {
     "خرید", "فروش", "قیمت", "محصول", "کالا", "مدل", "اصل", "اورجینال",
     "original", "new", "جدید", "با", "برای", "و", "the", "a", "an",
 }
+_UNIT_CODE = re.compile(r"^\d+(?:w|v|a|mah|wh|gb|tb|hz|cm|mm|m|kg|g)$", re.I)
+_GENERIC_CODES = {
+    "usb20", "usb30", "usb31", "usb32", "typec", "wifi6",
+    "bt50", "bt51", "bt52", "bt53", "qc30", "pd20", "pd30",
+}
 
 
 def _norm(value):
@@ -38,51 +43,74 @@ def _compact(value):
     return re.sub(r"[^a-z0-9آ-ی]+", "", _norm(value))
 
 
+def _valid_model_code(value):
+    compact = re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
+    if not 3 <= len(compact) <= 28:
+        return ""
+    if not re.search(r"[a-z]", compact) or not re.search(r"\d", compact):
+        return ""
+    if _UNIT_CODE.fullmatch(compact) or compact in _GENERIC_CODES:
+        return ""
+    # Avoid dates/year-like values and long numeric identifiers disguised by a
+    # single unit/letter. Real accessory models normally contain a meaningful
+    # alpha prefix/segment plus digits.
+    if len(re.findall(r"[a-z]", compact)) < 1 or len(re.findall(r"\d", compact)) < 1:
+        return ""
+    return compact
+
+
 def _candidate_model(value):
+    """Extract one stable alpha-numeric model, not capacities around it.
+
+    Examples: EP-T2510 -> ept2510, EP T2510 25W -> ept2510,
+    JR-T03 -> jrt03. A trailing 25W/10000mAh is deliberately ignored.
+    """
     raw = _norm(value)
     if not raw:
         return ""
-    # Prefer a compact mixed alpha-numeric code. Models such as EP-T2510,
-    # JR-T03, A15 and X200 normalize to the same key across source sites.
-    pieces = re.findall(r"[a-z0-9]+(?:[-_/ ][a-z0-9]+){0,3}", raw)
+    tokens = re.findall(r"[a-z0-9]+", raw)
     candidates = []
-    for piece in pieces:
-        compact = re.sub(r"[^a-z0-9]", "", piece)
-        if len(compact) < 2 or len(compact) > 40:
-            continue
-        if not re.search(r"[a-z]", compact) or not re.search(r"\d", compact):
-            continue
-        if re.fullmatch(r"\d+(?:w|v|a|mah|wh|gb|tb|hz|cm|mm|m)", compact):
-            continue
-        if compact in {"usb20", "usb30", "usb31", "usb32", "typec", "wifi6", "bt50", "bt51", "bt52", "bt53"}:
-            continue
-        score = len(compact) + (4 if re.search(r"[a-z]{2,}", compact) else 0)
-        candidates.append((score, compact))
+
+    for index, token in enumerate(tokens):
+        direct = _valid_model_code(token)
+        if direct:
+            candidates.append((100 + len(direct), direct))
+
+        # Hyphen/space-split models commonly use a short alphabetic prefix plus
+        # a mixed/numeric second segment: EP + T2510, JR + T03, SM + A556E.
+        if index + 1 < len(tokens) and token.isalpha() and 1 <= len(token) <= 4:
+            second = tokens[index + 1]
+            joined = _valid_model_code(token + second)
+            if joined and not _UNIT_CODE.fullmatch(second):
+                candidates.append((150 + len(joined), joined))
+
+    # Preserve explicitly punctuated model codes as another high-confidence
+    # candidate, but do not swallow a following capacity token.
+    for match in re.finditer(r"(?<![a-z0-9])([a-z]{1,5}[-_/][a-z0-9]{2,16})(?![a-z0-9])", raw, re.I):
+        value = _valid_model_code(match.group(1))
+        if value:
+            candidates.append((180 + len(value), value))
+
     return max(candidates)[1] if candidates else ""
 
 
 def extract_model_key(data):
     specs = data.get("specs") or {}
+    model_keys = {_compact(x) for x in _MODEL_KEYS}
     for raw_key, raw_value in specs.items():
-        k = _compact(raw_key)
-        if k in {_compact(x) for x in _MODEL_KEYS}:
+        if _compact(raw_key) in model_keys:
             candidate = _candidate_model(raw_value)
             if candidate:
                 return f"model:{candidate}"
 
     name = _norm(data.get("name"))
-    for match in re.finditer(r"(?:مدل|model)\s*[:：\-]?\s*([^،,|()\[\]\n]{2,50})", name, re.I):
+    for match in re.finditer(r"(?:مدل|model)\s*[:：\-]?\s*([^،,|()\[\]\n]{2,60})", name, re.I):
         candidate = _candidate_model(match.group(1))
         if candidate:
             return f"model:{candidate}"
 
-    # Scan title tokens, preferring longer distinctive model codes. Generic
-    # capacities such as 25W/10000mAh are rejected above.
     candidate = _candidate_model(name)
-    if candidate:
-        return f"model:{candidate}"
-
-    return ""
+    return f"model:{candidate}" if candidate else ""
 
 
 def exact_name_key(data):
@@ -92,13 +120,22 @@ def exact_name_key(data):
         if token in _STOP_NAME or len(token) < 2:
             continue
         words.append(token)
-    # Name matching is intentionally strict; it is only a fallback when no
-    # model code is available, avoiding false merges of generic accessories.
+    # Exact-name fallback is deliberately conservative: model identity is used
+    # first. Only reasonably descriptive names (>=3 useful tokens) can merge.
     return "name:" + "".join(words) if len(words) >= 3 else ""
 
 
 def identity_key(data):
     return extract_model_key(data) or exact_name_key(data)
+
+
+def _strong_identity(value):
+    value = str(value or "")
+    if value.startswith("model:"):
+        return True
+    # Exact descriptive names are safe enough as a fallback; very short names
+    # like «کابل تایپ سی» are intentionally not merged cross-source.
+    return value.startswith("name:") and len(value) >= 22
 
 
 def _source_for_url(url):
@@ -150,14 +187,17 @@ def backfill_existing_offers():
             )
             created += 1
         except Exception:
-            # A duplicate canonical URL may already have been backfilled by a
-            # concurrent job; leave it to the next consolidation pass.
             pass
     return created
 
 
 def _canonical_score(product):
-    manual = int(bool(product.manual_name_override or product.manual_image_url_override or product.manual_price_override is not None or product.manual_stock_override is not None))
+    manual = int(bool(
+        product.manual_name_override
+        or product.manual_image_url_override
+        or product.manual_price_override is not None
+        or product.manual_stock_override is not None
+    ))
     offers = ProductSourceOffer.objects.filter(product=product, is_active=True).count()
     return (manual, int(product.is_active), offers, -int(product.pk))
 
@@ -181,7 +221,13 @@ def aggregate_product(product):
     priced = [x for x in offers if int(x.sale_price or 0) > 0]
     in_stock = [x for x in priced if int(x.stock or 0) > 0]
     pool = in_stock or priced or offers
-    best = min(pool, key=lambda x: (int(x.sale_price or 10**30) if int(x.sale_price or 0) else 10**30, x.id))
+    best = min(
+        pool,
+        key=lambda x: (
+            int(x.sale_price or 10**30) if int(x.sale_price or 0) else 10**30,
+            x.id,
+        ),
+    )
 
     updates = {
         "source_url": best.source_url,
@@ -218,27 +264,25 @@ def aggregate_product(product):
         if category:
             updates["category_id"] = category.id
 
-    # QuerySet.update intentionally bypasses Product.save() so source stock can
-    # be aggregated without accidentally converting it into a manual override.
     Product.objects.filter(pk=product.pk).update(**updates)
     return Product.objects.select_related("category").get(pk=product.pk)
 
 
 @transaction.atomic
 def consolidate_duplicate_products():
-    """Collapse duplicate synced rows by strong model identity.
+    """Collapse duplicate synced rows by model, then strict exact-name fallback.
 
     Historical duplicate Product rows are kept inactive instead of deleted so
-    old OrderItems remain valid. Their source offers are moved to the canonical
-    product and live stock is aggregated across all sources.
+    old OrderItems remain valid. Their source offers move to the canonical row,
+    and live stock becomes the sum of all active source offers.
     """
     stats = {"products_merged": 0, "offers_moved": 0}
     groups = defaultdict(set)
     for offer in ProductSourceOffer.objects.exclude(model_key="").only("product_id", "model_key"):
-        if offer.model_key.startswith("model:"):
+        if _strong_identity(offer.model_key):
             groups[offer.model_key].add(offer.product_id)
 
-    for model_key, product_ids in groups.items():
+    for identity, product_ids in groups.items():
         if len(product_ids) < 2:
             continue
         products = list(Product.objects.filter(pk__in=product_ids, source_type=Product.SYNCED))
@@ -254,10 +298,10 @@ def consolidate_duplicate_products():
             Product.objects.filter(pk=duplicate.pk).update(
                 is_active=False,
                 stock=0,
-                sync_error=f"merged_into:{canonical.public_code or canonical.pk}; model={model_key[:120]}",
+                sync_error=f"merged_into:{canonical.public_code or canonical.pk}; identity={identity[:120]}",
             )
             stats["products_merged"] += 1
-        canonical = aggregate_product(canonical)
+        aggregate_product(canonical)
     return stats
 
 
@@ -266,21 +310,31 @@ def find_offer(site, url, source_code, model_key):
     if offer:
         return offer
     if source_code:
-        offer = ProductSourceOffer.objects.filter(source_site=site, source_product_code=source_code).select_related("product").first()
+        offer = ProductSourceOffer.objects.filter(
+            source_site=site,
+            source_product_code=source_code,
+        ).select_related("product").first()
         if offer:
             return offer
     if model_key:
-        offer = ProductSourceOffer.objects.filter(source_site=site, model_key=model_key).select_related("product").first()
+        offer = ProductSourceOffer.objects.filter(
+            source_site=site,
+            model_key=model_key,
+        ).select_related("product").first()
         if offer:
             return offer
     return None
 
 
 def find_canonical_product(model_key):
-    if not model_key or not model_key.startswith("model:"):
+    if not _strong_identity(model_key):
         return None
     offer = (
-        ProductSourceOffer.objects.filter(model_key=model_key, product__source_type=Product.SYNCED, product__is_active=True)
+        ProductSourceOffer.objects.filter(
+            model_key=model_key,
+            product__source_type=Product.SYNCED,
+            product__is_active=True,
+        )
         .select_related("product")
         .order_by("product_id", "id")
         .first()
