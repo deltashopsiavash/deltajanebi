@@ -22,6 +22,7 @@ class Command(BaseCommand):
         errors = []
         checked = 0
         skipped = 0
+        product_delay = max(0.0, min(float(os.getenv("DELTA_SOURCE_PRODUCT_DELAY", "0.08")), 2.0))
 
         for site in sites:
             self.stdout.write(f"Syncing source: {site.name} ({site.hostname})")
@@ -39,10 +40,12 @@ class Command(BaseCommand):
                         change_lines.extend(_change_lines(site, product, created, changes))
                 except (SourceNotProductError, CatalogSkip):
                     skipped += 1
-                    continue
                 except Exception as exc:
                     if len(errors) < 20:
                         errors.append(f"{site.name}: {str(exc)[:160]}\n🔗 {url}")
+                finally:
+                    if product_delay:
+                        time.sleep(product_delay)
 
             if site.bulk_import_enabled:
                 site.last_bulk_sync_at = timezone.now()
