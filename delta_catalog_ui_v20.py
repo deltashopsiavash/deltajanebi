@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Additive Delta catalog pagination.
+"""Additive Delta catalog/category management UI improvements.
 
-Only the product-list renderer and its page navigation callbacks are patched.
-Every other native Delta callback continues through the existing restoration
-chain unchanged.
+Only product/category list rendering and their navigation callbacks are
+intercepted. Every other native Delta callback continues through the existing
+restoration chain unchanged.
 """
+import math
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import delta_bot_native as native
 
 _ORIGINAL_CALLBACK = native.callback
 PAGE_SIZE = 25
+CATEGORY_PAGE_SIZE = 25
 
 
 def _title(mode):
@@ -75,9 +78,52 @@ async def show_products(q, site, sid, mode="all", query="", page=1):
     )
 
 
+async def show_categories(q, site, sid, page=1):
+    response = await native.core.api(site, "categories", timeout=45)
+    rows = response.get("data") or []
+    total = len(rows)
+    pages = max(1, math.ceil(total / CATEGORY_PAGE_SIZE))
+    page = min(max(1, int(page or 1)), pages)
+    start = (page - 1) * CATEGORY_PAGE_SIZE
+    visible = rows[start:start + CATEGORY_PAGE_SIZE]
+
+    keys = []
+    for item in visible:
+        depth = max(0, min(int(item.get("depth") or 0), 5))
+        prefix = "↳ " * depth
+        status = "✅" if item.get("is_active") else "⛔"
+        name = str(item.get("name") or "-")
+        keys.append([
+            InlineKeyboardButton(
+                f"{status} {prefix}{name[:38]} ({int(item.get('product_count') or 0)})",
+                callback_data=f"d:cat:{sid}:{item['id']}",
+            )
+        ])
+
+    if pages > 1:
+        nav = []
+        if page > 1:
+            nav.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"d:cats:{sid}:{page - 1}"))
+        nav.append(InlineKeyboardButton(f"{page}/{pages}", callback_data=f"d:cats:{sid}:{page}"))
+        if page < pages:
+            nav.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"d:cats:{sid}:{page + 1}"))
+        keys.append(nav)
+
+    keys.extend([
+        [InlineKeyboardButton("➕ دسته جدید", callback_data=f"d:catadd:{sid}")],
+        [InlineKeyboardButton("⬅️ محصولات", callback_data=f"d:pmenu:{sid}")],
+    ])
+    return await native._edit(
+        q,
+        f"📂 دسته‌بندی‌های مرتب Delta\n\n📁 کل: {total:,} دسته\n📄 صفحه {page} از {pages}\n↳ یعنی زیردسته",
+        InlineKeyboardMarkup(keys),
+    )
+
+
 async def callback(update, context):
     data = update.callback_query.data or ""
     parts = data.split(":")
+
     if len(parts) == 5 and parts[0] == "d" and parts[1] == "products" and parts[2].isdigit() and parts[4].isdigit():
         sid = int(parts[2])
         mode = parts[3] or "all"
@@ -89,6 +135,20 @@ async def callback(update, context):
         await update.callback_query.answer()
         await show_products(update.callback_query, site, sid, mode=mode, page=page)
         return True
+
+    if len(parts) in {3, 4} and parts[0] == "d" and parts[1] == "cats" and parts[2].isdigit():
+        if len(parts) == 4 and not parts[3].isdigit():
+            return await _ORIGINAL_CALLBACK(update, context)
+        sid = int(parts[2])
+        page = int(parts[3]) if len(parts) == 4 else 1
+        site = native._site(update.callback_query.from_user.id, sid)
+        if not site:
+            await update.callback_query.answer("عدم دسترسی", show_alert=True)
+            return True
+        await update.callback_query.answer()
+        await show_categories(update.callback_query, site, sid, page=page)
+        return True
+
     return await _ORIGINAL_CALLBACK(update, context)
 
 
