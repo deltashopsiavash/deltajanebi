@@ -103,13 +103,15 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_sync_progress_v19.py delta_sync_progress_v20.py delta_catalog_ui_v20.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py bot_catalog_regression_v20.py
       - name: Mixed DB isolation and native capability contract
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Native footer flow regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
       - name: Native source controls regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_source_regression.py
+      - name: Delta product pagination regression
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_catalog_regression_v20.py
       - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
@@ -118,14 +120,20 @@ jobs:
           import delta_bot_native as delta
           import delta_footer_restore as footer
           import delta_source_restore as source
+          import delta_sync_progress_v20 as progress20
+          import delta_catalog_ui_v20 as catalog
           assert callable(entry.run) and callable(entry.cancel)
           assert callable(router.routed_site_panel) and callable(router.detect_platform)
           assert callable(delta.callback) and callable(delta.message) and callable(delta.media)
           assert callable(footer.install) and callable(footer.normalize_phone)
           assert callable(source.install) and callable(source.callback)
+          assert callable(progress20.install) and callable(progress20.progress_text)
+          assert callable(catalog.install) and callable(catalog.show_products)
           assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
           assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
-          print("Delta native multi-site + footer + source controls imports: OK")
+          assert getattr(delta, "_delta_catalog_ui_v20_installed", False) is True
+          assert getattr(source, "_delta_sync_progress_v20_installed", False) is True
+          print("Delta native multi-site + footer + source + v20 catalog imports: OK")
           PY
       - name: Installer runtime regression check
         run: |

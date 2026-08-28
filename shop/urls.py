@@ -1,7 +1,7 @@
 from django.urls import path
 
 from enhancements import account_views as enhanced_accounts
-from enhancements.site_api_v16 import bot_api
+from enhancements.site_api_v17 import bot_api
 from . import auth_views, views, wallet_checkout
 
 urlpatterns = [
