@@ -12,7 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import delta_bot_native as native
 
 _ORIGINAL_CALLBACK = native.callback
-PAGE_SIZE = 25
+PAGE_SIZE = 45
 CATEGORY_PAGE_SIZE = 25
 
 
@@ -36,8 +36,7 @@ async def show_products(q, site, sid, mode="all", query="", page=1):
     rows = response.get("data") or []
     pagination = response.get("pagination") or {}
 
-    # Compatibility with a site that has not yet received API v17: old API
-    # returns a plain list. Keep it usable and cap the Telegram page at 25.
+    # Compatibility with a site that has not yet received the paginated API.
     if not pagination:
         rows = rows[:PAGE_SIZE]
         total = len(rows)
