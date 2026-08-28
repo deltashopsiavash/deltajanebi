@@ -206,7 +206,6 @@ def discover_product_urls_bounded(
             site,
             deadline,
             accept or "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            heartbeat=heartbeat,
         )
         requests_done += 1
         heartbeat()
