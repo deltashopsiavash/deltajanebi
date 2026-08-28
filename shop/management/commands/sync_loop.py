@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from shop.management.commands.telegram_bot_v8 import _catalog_urls, _change_lines, _chunk_changes
 from shop.models import SourceSite
-from shop.services.source_catalog_v20 import CatalogSkip, source_products, upsert_source_product_with_changes
+from shop.services.source_catalog_v22 import CatalogSkip, source_products, upsert_source_product_with_changes
 from shop.services.source_sync import SourceNotProductError
 from shop.services.telegram_notify import notify_admins
 
