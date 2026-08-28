@@ -5,20 +5,30 @@ import time
 from django.utils import timezone
 
 from shop.models import SourceSite
+from shop.source_offer_models import ProductSourceOffer
 from shop.services.category_v21 import consolidate_sibling_duplicates
-from shop.services.source_bulk_job import JOB_DIR, LOCK_FILE, MAX_WARNINGS, _existing_urls, read_job, write_job
+from shop.services.source_bulk_job import (
+    JOB_DIR,
+    LOCK_FILE,
+    MAX_WARNINGS,
+    _existing_urls as _legacy_existing_urls,
+    read_job,
+    write_job,
+)
 from shop.services.source_catalog_v21 import (
     CatalogSkip,
     import_unpriced_catalog_product,
     upsert_source_product_with_changes,
 )
 from shop.services.source_discovery_v19 import discover_product_urls_bounded
-from shop.services.source_identity_v21 import backfill_existing_offers, consolidate_duplicate_products
+from shop.services.source_identity_v21 import (
+    aggregate_product,
+    backfill_existing_offers,
+    consolidate_duplicate_products,
+)
 from shop.services.source_sync import SourceNotProductError
 
 
-# Keep one slow source from making a detached sync look dead. Explicit operator
-# configuration always wins over these safer full-sync defaults.
 os.environ.setdefault("SOURCE_REQUEST_TIMEOUT", "10")
 DISCOVERY_BUDGET = max(30, int(os.getenv("DELTA_SOURCE_DISCOVERY_BUDGET", "75")))
 DISCOVERY_MAX_SITEMAPS = max(30, int(os.getenv("DELTA_SOURCE_DISCOVERY_MAX_SITEMAPS", "180")))
@@ -26,9 +36,36 @@ DISCOVERY_MAX_PAGES = max(40, int(os.getenv("DELTA_SOURCE_DISCOVERY_MAX_PAGES", 
 PRODUCT_DELAY = max(0.0, min(float(os.getenv("DELTA_SOURCE_PRODUCT_DELAY", "0.03")), 1.0))
 
 
+def _existing_urls(site):
+    """Return legacy Product URLs plus every v21 offer URL for this source."""
+    urls = list(
+        ProductSourceOffer.objects.filter(source_site=site)
+        .exclude(source_url="")
+        .values_list("source_url", flat=True)
+    )
+    urls.extend(_legacy_existing_urls(site))
+    return list(dict.fromkeys(urls))
+
+
 def _warn(state, text):
     if len(state["warnings"]) < MAX_WARNINGS:
         state["warnings"].append(str(text)[:260])
+
+
+def _mark_source_missing(site, url):
+    offer = (
+        ProductSourceOffer.objects.filter(source_site=site, source_url=url)
+        .select_related("product")
+        .first()
+    )
+    if not offer:
+        return
+    product = offer.product
+    offer.stock = 0
+    offer.is_active = False
+    offer.last_seen_at = timezone.now()
+    offer.save(update_fields=["stock", "is_active", "last_seen_at", "updated_at"])
+    aggregate_product(product)
 
 
 def _sync_urls(job_id, state, site, urls, phase):
@@ -37,8 +74,7 @@ def _sync_urls(job_id, state, site, urls, phase):
     write_job(job_id, state)
     for url in urls:
         state["current_url"] = str(url)[:500]
-        # Heartbeat *before* network access: if a source page takes several
-        # seconds the Telegram UI still shows exactly what is being fetched.
+        # Heartbeat before network access so a slow product page is visible.
         write_job(job_id, state)
         try:
             _, created, changes = upsert_source_product_with_changes(site, url)
@@ -54,12 +90,17 @@ def _sync_urls(job_id, state, site, urls, phase):
                     state["changed"] += 1
                 _warn(state, f"{site.name}: بدون قیمت وارد/به‌روزرسانی شد: {exc}")
             except SourceNotProductError as nested:
+                _mark_source_missing(site, url)
                 state["skipped"] += 1
                 _warn(state, f"{site.name}: {nested}")
             except Exception as nested:
                 state["errors"] += 1
                 _warn(state, f"{site.name}: import-unpriced: {nested}")
         except SourceNotProductError as exc:
+            # A confirmed non-product/removed page should no longer contribute
+            # stale stock. Network/time-out errors are handled separately and
+            # deliberately preserve the last known offer.
+            _mark_source_missing(site, url)
             state["skipped"] += 1
             _warn(state, f"{site.name}: {exc}")
         except Exception as exc:
@@ -76,10 +117,9 @@ def run_full_sync(job_id):
     """Incremental full sync: existing products first, discovery second per site.
 
     v20 discovered every source completely before processing the first product.
-    On a large/slow source that left the public counter at 0/N for minutes.
-    v21 starts useful work immediately, discovers only after known URLs are
-    refreshed, then processes newly discovered URLs before moving to the next
-    source. Cross-source offers are consolidated by strong model identity.
+    v21 refreshes all known Product/Offer URLs immediately, then searches only
+    for additions on that source, keeping the public counter moving from the
+    start and preserving independent stock for every source behind one product.
     """
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     lock_handle = LOCK_FILE.open("a+")
@@ -95,7 +135,11 @@ def run_full_sync(job_id):
             })
 
         sites = list(SourceSite.objects.filter(is_active=True).order_by("id"))
-        known_by_site = [(site, list(dict.fromkeys(_existing_urls(site)))) for site in sites]
+
+        # Backfill first so known_by_site includes secondary source URLs from
+        # already-merged legacy products in this very same run.
+        pre_backfilled = backfill_existing_offers()
+        known_by_site = [(site, _existing_urls(site)) for site in sites]
         state = {
             "status": "running",
             "phase": "preparing",
@@ -111,7 +155,7 @@ def run_full_sync(job_id):
             "products_recategorized": 0,
             "products_merged": 0,
             "offers_moved": 0,
-            "offers_backfilled": 0,
+            "offers_backfilled": pre_backfilled,
             "current_site": "",
             "discover_scanned": 0,
             "discover_found": 0,
@@ -122,7 +166,6 @@ def run_full_sync(job_id):
         }
         write_job(job_id, state)
 
-        state["offers_backfilled"] = backfill_existing_offers()
         cleanup = consolidate_sibling_duplicates()
         state["categories_merged"] += cleanup["categories_merged"]
         state["products_recategorized"] += cleanup["products_recategorized"]
@@ -142,12 +185,9 @@ def run_full_sync(job_id):
                 discover_budget=DISCOVERY_BUDGET,
             )
 
-            # 1) Refresh existing catalog immediately. This is the crucial v21
-            # behavior that prevents a 0/N screen while discovery is crawling.
             if known_urls:
                 _sync_urls(job_id, state, site, known_urls, "syncing_known")
 
-            # 2) Discover new catalog entries only after known products moved.
             discovered = []
             if site.bulk_import_enabled:
                 state["phase"] = "discovering"
@@ -204,8 +244,6 @@ def run_full_sync(job_id):
                 site.last_bulk_sync_at = timezone.now()
                 site.save(update_fields=["last_bulk_sync_at"])
 
-            # Consolidate at every source boundary so duplicates from the source
-            # just processed disappear before the next one starts.
             duplicate_cleanup = consolidate_duplicate_products()
             state["products_merged"] += duplicate_cleanup["products_merged"]
             state["offers_moved"] += duplicate_cleanup["offers_moved"]
