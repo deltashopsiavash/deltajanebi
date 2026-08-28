@@ -4,8 +4,7 @@ from django.test import TestCase
 from shop.models import Category, Product, SourceSite
 from shop.source_offer_models import ProductSourceOffer
 from shop.services import category_v22
-from shop.services import source_catalog_v22  # noqa: F401 - installs v22 policy into v21 engine
-from shop.services import source_catalog_v21 as engine
+from shop.services import source_catalog_v22 as engine
 from shop.services import source_identity_v22 as identity
 from shop.services import source_sanitizer_v22 as sanitizer
 
