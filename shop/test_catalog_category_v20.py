@@ -144,7 +144,7 @@ class ProductPaginationV20Tests(TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         self.client = Client()
-        for index in range(61):
+        for index in range(101):
             Product.objects.create(name=f"محصول {index:03d}", price=1000 + index, stock=1)
 
     def api(self, page):
@@ -155,16 +155,16 @@ class ProductPaginationV20Tests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
         )
 
-    def test_all_products_are_paginated_25_per_page(self):
+    def test_all_products_are_paginated_45_per_page(self):
         first = self.api(1)
         second = self.api(2)
         third = self.api(3)
         self.assertEqual(first.status_code, 200, first.content)
-        self.assertEqual(len(first.json()["data"]), 25)
-        self.assertEqual(len(second.json()["data"]), 25)
+        self.assertEqual(len(first.json()["data"]), 45)
+        self.assertEqual(len(second.json()["data"]), 45)
         self.assertEqual(len(third.json()["data"]), 11)
-        self.assertEqual(first.json()["pagination"]["total"], 61)
+        self.assertEqual(first.json()["pagination"]["total"], 101)
         self.assertEqual(first.json()["pagination"]["pages"], 3)
-        self.assertEqual(first.json()["pagination"]["per_page"], 25)
+        self.assertEqual(first.json()["pagination"]["per_page"], 45)
         self.assertTrue(first.json()["pagination"]["has_next"])
         self.assertFalse(third.json()["pagination"]["has_next"])
