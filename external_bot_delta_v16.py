@@ -39,6 +39,9 @@ delta_sync_progress_v20.install()
 import delta_sync_progress_v21  # noqa: E402
 
 delta_sync_progress_v21.install()
+import delta_sync_progress_v22  # noqa: E402
+
+delta_sync_progress_v22.install()
 import delta_catalog_ui_v20  # noqa: E402
 
 delta_catalog_ui_v20.install()
