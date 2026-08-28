@@ -41,12 +41,15 @@ def _depth(item):
 
 
 def _category_score(item):
+    # Prefer the oldest stable/shallow category. Product counts come later so a
+    # recently-created duplicate cannot win merely because one sync already put
+    # rows into it; those rows should move back to the original category.
     return (
         int(bool(item.is_active)),
-        Product.objects.filter(category_id=item.pk).count(),
-        Category.objects.filter(parent_id=item.pk).count(),
         -_depth(item),
         -int(item.pk),
+        Product.objects.filter(category_id=item.pk).count(),
+        Category.objects.filter(parent_id=item.pk).count(),
     )
 
 
