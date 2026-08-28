@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
@@ -12,7 +12,12 @@ class _FakeResponse:
         self.url = url
         self.encoding = "utf-8"
         self._chunks = list(chunks)
+        self._content = b""
         self.closed = False
+
+    @property
+    def content(self):
+        return self._content
 
     def iter_content(self, chunk_size=65536):
         yield from self._chunks
