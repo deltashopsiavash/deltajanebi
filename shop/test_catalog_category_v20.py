@@ -91,6 +91,51 @@ class CanonicalCategoryV20Tests(TestCase):
         self.assertEqual(mocked.call_count, 2)
 
 
+class CategoryApiV20Tests(TestCase):
+    API_KEY = "test-delta-v20-category-key-0123456789abcdef"
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"DELTAJANEBI_BOT_API_KEY": self.API_KEY, "DOMAIN": "delta.example"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.client = Client()
+
+    def api(self, action, payload=None):
+        return self.client.post(
+            "/api/bot/v1/",
+            data=json.dumps({"action": action, "payload": payload or {}}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
+        )
+
+    def test_categories_are_returned_parent_then_children(self):
+        second_root = Category.objects.create(name="لوازم خانگی", slug="", order=2)
+        child = Category.objects.create(name="باتری", slug="", parent=second_root, order=0)
+        first_root = Category.objects.create(name="لوازم جانبی موبایل", slug="", order=1)
+        Category.objects.create(name="کابل ها", slug="", parent=first_root, order=0)
+
+        response = self.api("categories")
+        self.assertEqual(response.status_code, 200, response.content)
+        rows = response.json()["data"]
+        ids = [row["id"] for row in rows]
+        self.assertLess(ids.index(first_root.id), ids.index(second_root.id))
+        self.assertEqual(ids[ids.index(second_root.id) + 1], child.id)
+        child_row = next(row for row in rows if row["id"] == child.id)
+        self.assertEqual(child_row["depth"], 1)
+        self.assertEqual(child_row["path"], "لوازم خانگی > باتری")
+
+    def test_manual_duplicate_category_creation_reuses_canonical_leaf(self):
+        parent = Category.objects.create(name="لوازم جانبی موبایل", slug="")
+        existing = Category.objects.create(name="کابل‌ها", slug="", parent=parent)
+        response = self.api("category_create", {"name": "کابل ها"})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["data"]["id"], existing.id)
+        self.assertEqual(
+            sum(1 for item in Category.objects.all() if category_key(item.name) == category_key("کابل ها")),
+            1,
+        )
+
+
 class ProductPaginationV20Tests(TestCase):
     API_KEY = "test-delta-v20-api-key-0123456789abcdef"
 
