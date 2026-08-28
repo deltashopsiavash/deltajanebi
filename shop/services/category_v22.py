@@ -18,13 +18,7 @@ infer_top_category = v21.infer_top_category
 
 
 def canonical_path(raw_names, product_name="", specs=None):
-    """Prefer the exact source breadcrumb; infer a category only as fallback.
-
-    v21 replaced a valid source tree with a Delta-inferred root plus one leaf.
-    That was able to turn precise source branches such as storage capacities
-    into a different local hierarchy. v22 preserves every useful source level
-    (up to eight) and only uses the classifier when no usable breadcrumb exists.
-    """
+    """Prefer the exact source breadcrumb; infer a category only as fallback."""
     cleaned = []
     seen = set()
     for raw in raw_names or []:
@@ -80,9 +74,11 @@ def _direct(parent, category_key):
 def sync_category_path(names):
     """Resolve a source path without ever creating a second equal category.
 
-    A direct child is preferred when it already exists. Otherwise any category
-    with the same normalized name anywhere in the tree is reused and the product
-    is attached to that existing category instead of creating a duplicate branch.
+    If the final/leaf category already exists anywhere, return it immediately.
+    This avoids creating throw-away parent branches merely because the source
+    breadcrumb reaches an already-known category through a different parent.
+    Otherwise direct children are preferred and any normalized global match is
+    reused before a new row is created.
     """
     values = []
     seen = set()
@@ -94,6 +90,13 @@ def sync_category_path(names):
             seen.add(item_key)
     if not values:
         return None
+
+    existing_leaf = _best_global(values[-1][1])
+    if existing_leaf is not None:
+        if not existing_leaf.is_active:
+            existing_leaf.is_active = True
+            existing_leaf.save(update_fields=["is_active"])
+        return existing_leaf
 
     parent = None
     for name, item_key in values:
@@ -124,8 +127,6 @@ def _merge_duplicate(duplicate, canonical, stats):
     if duplicate.pk == canonical.pk or not Category.objects.filter(pk=duplicate.pk).exists():
         return
 
-    # Canonical is normally the shallower row. Keep a defensive cycle guard for
-    # malformed old trees before moving children.
     if _is_descendant(canonical, duplicate):
         canonical.parent = duplicate.parent
         canonical.save(update_fields=["parent"])
