@@ -29,6 +29,20 @@ async def run_test():
 
     async def fake_api(site, action, payload=None, timeout=None):
         calls.append((action, payload or {}))
+        if action == "categories":
+            rows = []
+            for index in range(52):
+                depth = 0 if index % 3 == 0 else 1
+                rows.append({
+                    "id": index + 1,
+                    "name": f"دسته {index + 1}",
+                    "path": f"والد > دسته {index + 1}" if depth else f"دسته {index + 1}",
+                    "depth": depth,
+                    "is_active": True,
+                    "product_count": index,
+                })
+            return {"ok": True, "data": rows}
+
         assert action == "delta_products"
         page = int((payload or {}).get("page") or 1)
         rows = [
@@ -70,6 +84,18 @@ async def run_test():
         assert "2/4" in all_labels
         assert "کل: 100 محصول" in text
         assert "صفحه 2 از 4" in text
+
+        q2 = Query()
+        await catalog_ui.show_categories(q2, {"id": 2}, 2, page=2)
+        text2, markup2 = q2.edits[-1]
+        category_labels = labels(markup2)
+        category_buttons = [x for x in category_labels if x.startswith("✅")]
+        assert len(category_buttons) == 25, len(category_buttons)
+        assert any("↳" in x for x in category_buttons)
+        assert "⬅️ قبلی" in category_labels
+        assert "بعدی ➡️" in category_labels
+        assert "2/3" in category_labels
+        assert "کل: 52 دسته" in text2
     finally:
         native.core.api = original_api
 
@@ -77,6 +103,7 @@ async def run_test():
 def main():
     asyncio.run(run_test())
     print("Delta 25-item product pagination: OK")
+    print("Delta ordered category pagination: OK")
 
 
 if __name__ == "__main__":
