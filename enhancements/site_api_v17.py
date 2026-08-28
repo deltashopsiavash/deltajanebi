@@ -7,10 +7,10 @@ from django.views.decorators.csrf import csrf_exempt
 
 from shop.models import Product
 
-# Load the v20 catalog service before the legacy API chain. Bulk/background
-# sync uses it directly; this import also keeps one canonical implementation
-# available to future API actions without replacing any old Delta endpoint.
-from shop.services import source_catalog_v20  # noqa: F401
+# Install the v20 catalog behavior before importing the legacy API chain. This
+# preserves every existing endpoint while making old single-product sync calls
+# use the resilient/category-canonical implementation too.
+from shop.services import source_catalog_patch_v20  # noqa: F401
 
 from .site_api import _authorized, _json
 from .site_api_v14 import _product_row
