@@ -1,6 +1,6 @@
 """Product identity and duplicate repair for Delta catalog v22.
 
-v22 keeps the useful v21 model matching, but treats capacity/size variants as
+v22 keeps the useful v21 model parser, but treats capacity/size variants as
 separate identities, allows multiple URLs from one source to contribute stock
 to one canonical product, repairs products that were previously over-merged,
 and actually removes duplicate Product rows after moving their references.
@@ -9,15 +9,12 @@ import re
 from collections import defaultdict
 
 from django.db import transaction
+from django.utils import timezone
 
 from shop.models import Product
 from shop.source_offer_models import ProductSourceOffer
 from shop.services import source_identity_v21 as v21
 from shop.services import category_v22
-
-# v21's aggregate function resolves this global at call time. Point it at the
-# v22 resolver so all old aggregation callers also stop creating category twins.
-v21.sync_category_path = category_v22.sync_category_path
 
 
 def _variant_text(data):
@@ -39,9 +36,6 @@ def _spec_capacity(data):
                 unit = match.group(2).casefold()
                 unit = "tb" if unit in {"tb", "ترابایت"} else "gb"
                 return f"storage:{value}{unit}"
-            # Capacity fields on Iranian accessory stores frequently expose only
-            # the number. A bare number is safe here because the field name itself
-            # explicitly says capacity/storage.
             bare = re.fullmatch(r"\s*(\d{1,5})\s*", text)
             if bare:
                 return f"storage:{bare.group(1)}gb"
@@ -49,7 +43,7 @@ def _spec_capacity(data):
 
 
 def variant_key(data):
-    """Return only variants that must remain separate despite equal model code."""
+    """Return variants that must stay separate despite an equal model code."""
     explicit = _spec_capacity(data)
     if explicit:
         return explicit
@@ -74,8 +68,6 @@ def variant_key(data):
     if battery:
         return f"battery:{battery.group(1)}mah"
 
-    # Length differentiates cable variants that can share a manufacturer's base
-    # model. It is intentionally enabled only when the item is clearly a cable.
     if "کابل" in text or " cable" in f" {text}":
         length = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*(متر|meter|metre|m\b|سانتی\s*متر|cm\b)", text, re.I)
         if length:
@@ -91,8 +83,6 @@ def identity_key(data):
     if base:
         variant = variant_key(data)
         return f"{base}|{variant}" if variant else base
-    # The strict descriptive-name fallback already contains storage/capacity
-    # tokens, so unlike the old model-only identity it does not collapse 16/128.
     return v21.exact_name_key(data)
 
 
@@ -102,14 +92,7 @@ def _strong_identity(value):
 
 
 def find_offer(site, url, source_code="", model_key=""):
-    """Match an offer by URL only.
-
-    Matching by ``site + model`` made a second product URL from the same source
-    overwrite the first offer. Keeping one offer per URL lets duplicate pages be
-    consolidated into one Product while their reported stock is aggregated.
-    Redirects are still handled because source_catalog_v21 retries the original
-    fallback URL before creating a new offer.
-    """
+    """Match one source offer by URL only, allowing same-model URL aggregation."""
     return ProductSourceOffer.objects.filter(source_url=url).select_related("product").first()
 
 
@@ -174,44 +157,88 @@ def _new_product_for_offer(source_product, representative):
 
 
 def aggregate_product(product):
-    """Use v21 aggregation with v22 categories and strict image replacement."""
-    v21.sync_category_path = category_v22.sync_category_path
-    product = v21.aggregate_product(product)
-    if product.manual_image_url_override:
-        return product
-
-    offers = list(ProductSourceOffer.objects.filter(product=product, is_active=True).order_by("id"))
+    """Aggregate all active source offers with exact v22 category/image policy."""
+    offers = list(
+        ProductSourceOffer.objects.filter(product=product, is_active=True)
+        .select_related("source_site")
+        .order_by("id")
+    )
     if not offers:
         return product
 
-    preferred = sorted(offers, key=lambda x: (0 if x.source_url == product.source_url else 1, x.id))
-    clean = []
-    rejected_seen = False
-    for offer in preferred:
-        payload = offer.payload or {}
-        rejected_seen = rejected_seen or bool(payload.get("image_rejected"))
-        image = str(payload.get("image_url") or "").strip()
-        if image and not payload.get("image_rejected"):
-            clean.append((image, list(payload.get("gallery") or [])))
-    if clean:
-        image, gallery = clean[0]
-        Product.objects.filter(pk=product.pk).update(image_url=image, gallery=gallery or [image])
-        product.refresh_from_db()
-    elif rejected_seen:
-        # Never keep an old source advertisement just because the newest strict
-        # sanitizer rejected every candidate. A missing image is preferable.
-        Product.objects.filter(pk=product.pk).update(image_url="", gallery=[])
-        product.refresh_from_db()
-    return product
+    total_stock = sum(max(0, int(x.stock or 0)) for x in offers)
+    priced = [x for x in offers if int(x.sale_price or 0) > 0]
+    in_stock = [x for x in priced if int(x.stock or 0) > 0]
+    pool = in_stock or priced or offers
+    best = min(
+        pool,
+        key=lambda x: (
+            int(x.sale_price or 10**30) if int(x.sale_price or 0) else 10**30,
+            x.id,
+        ),
+    )
+
+    updates = {
+        "source_url": best.source_url,
+        "source_product_code": best.source_product_code,
+        "last_synced_at": max((x.last_seen_at for x in offers), default=timezone.now()),
+        "sync_error": "",
+        "is_active": True,
+    }
+    if product.manual_stock_override is None:
+        updates["stock"] = total_stock
+    if product.manual_price_override is None and int(best.sale_price or 0) > 0:
+        updates["source_price"] = int(best.source_price or 0)
+        updates["price"] = int(best.sale_price or 0)
+        if best.source_site:
+            updates["markup_type"] = best.source_site.default_markup_type
+            updates["markup_value"] = best.source_site.default_markup_value
+
+    payload = best.payload or {}
+    if not product.manual_name_override and payload.get("name"):
+        updates["name"] = str(payload["name"])[:300]
+    if payload.get("description"):
+        updates["description"] = payload["description"]
+    if payload.get("specs"):
+        updates["specs"] = payload["specs"]
+
+    if not product.manual_image_url_override:
+        preferred = sorted(offers, key=lambda x: (0 if x.pk == best.pk else 1, x.id))
+        clean_image = None
+        clean_gallery = None
+        rejected_seen = False
+        for offer in preferred:
+            item = offer.payload or {}
+            rejected_seen = rejected_seen or bool(item.get("image_rejected"))
+            image = str(item.get("image_url") or "").strip()
+            if image and not item.get("image_rejected"):
+                clean_image = image
+                clean_gallery = list(item.get("gallery") or []) or [image]
+                break
+        if clean_image:
+            updates["image_url"] = clean_image
+            updates["gallery"] = clean_gallery
+        elif rejected_seen:
+            # A missing photo is safer than retaining an old source advertisement.
+            updates["image_url"] = ""
+            updates["gallery"] = []
+
+    paths = [list(x.category_path or []) for x in offers if x.category_path]
+    if paths:
+        chosen = max(paths, key=lambda x: (len(x), sum(len(str(p)) for p in x)))
+        category = category_v22.sync_category_path(chosen)
+        if category:
+            updates["category_id"] = category.id
+
+    Product.objects.filter(pk=product.pk).update(**updates)
+    return Product.objects.select_related("category").get(pk=product.pk)
 
 
 @transaction.atomic
 def split_mixed_identity_products():
     """Undo historical over-merges such as one model combining 16GB and 128GB."""
     stats = {"products_split": 0, "offers_reassigned": 0}
-    product_ids = list(
-        ProductSourceOffer.objects.values_list("product_id", flat=True).distinct().order_by("product_id")
-    )
+    product_ids = list(ProductSourceOffer.objects.values_list("product_id", flat=True).distinct().order_by("product_id"))
     for product_id in product_ids:
         try:
             product = Product.objects.get(pk=product_id, source_type=Product.SYNCED)
@@ -219,18 +246,13 @@ def split_mixed_identity_products():
             continue
         offers = list(ProductSourceOffer.objects.filter(product=product).select_related("source_site").order_by("id"))
         model_groups = defaultdict(list)
-        loose = []
         for offer in offers:
-            identity = offer.model_key or _offer_identity(offer)
-            if identity.startswith("model:") and _strong_identity(identity):
-                model_groups[identity].append(offer)
-            else:
-                loose.append(offer)
+            offer_identity = offer.model_key or _offer_identity(offer)
+            if offer_identity.startswith("model:") and _strong_identity(offer_identity):
+                model_groups[offer_identity].append(offer)
         if len(model_groups) <= 1:
             continue
 
-        # Keep the most representative identity on the existing Product so its
-        # public URL/manual overrides remain stable. Split every other variant.
         keep_identity = max(
             model_groups,
             key=lambda value: (
@@ -239,11 +261,10 @@ def split_mixed_identity_products():
                 -min(x.id for x in model_groups[value]),
             ),
         )
-        for identity, group in model_groups.items():
-            if identity == keep_identity:
+        for offer_identity, group in model_groups.items():
+            if offer_identity == keep_identity:
                 continue
-            representative = group[0]
-            target = _new_product_for_offer(product, representative)
+            target = _new_product_for_offer(product, group[0])
             moved = ProductSourceOffer.objects.filter(pk__in=[x.pk for x in group]).update(product=target)
             stats["offers_reassigned"] += moved
             stats["products_split"] += 1
@@ -296,7 +317,7 @@ def consolidate_duplicate_products():
         if _strong_identity(offer.model_key):
             groups[offer.model_key].add(offer.product_id)
 
-    for identity, product_ids in groups.items():
+    for offer_identity, product_ids in groups.items():
         if len(product_ids) < 2:
             continue
         products = list(Product.objects.filter(pk__in=product_ids, source_type=Product.SYNCED))
@@ -308,8 +329,6 @@ def consolidate_duplicate_products():
                 continue
             v21._copy_manual_overrides(duplicate, canonical)
 
-            # Preserve outstanding reservations and historical order links before
-            # deleting the duplicate row.
             reserved = max(0, int(canonical.reserved_stock or 0)) + max(0, int(duplicate.reserved_stock or 0))
             if reserved != int(canonical.reserved_stock or 0):
                 Product.objects.filter(pk=canonical.pk).update(reserved_stock=reserved)
