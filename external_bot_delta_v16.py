@@ -24,9 +24,8 @@ import delta_footer_restore
 
 core = v15.core
 
-# Install restorations in a deliberate chain. Source restoration is imported
-# only after footer restoration has wrapped native.callback, so it delegates
-# every unrelated callback through the already-restored footer flow.
+# Install restorations in a deliberate chain. Every module intercepts only its
+# own Delta callbacks and delegates everything else to the previous layer.
 delta_footer_restore.install()
 import delta_source_restore  # noqa: E402
 
@@ -34,6 +33,9 @@ delta_source_restore.install()
 import delta_sync_progress_v19  # noqa: E402
 
 delta_sync_progress_v19.install()
+import delta_catalog_ui_v20  # noqa: E402
+
+delta_catalog_ui_v20.install()
 
 
 async def cancel(update, context):
