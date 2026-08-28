@@ -8,18 +8,18 @@ from django.views.decorators.csrf import csrf_exempt
 
 from shop.models import Category, Product
 
-# Install the v20 catalog behavior before importing the legacy API chain. This
-# preserves every existing endpoint while making old single-product sync calls
-# use the resilient/category-canonical implementation too.
-from shop.services import source_catalog_patch_v20  # noqa: F401
-from shop.services.category_normalizer import sync_category_path
+# Install the current catalog policy before importing the legacy API chain. This
+# preserves every existing endpoint while keeping single-product calls aligned
+# with the same v22 category/identity behavior as full sync.
+from shop.services import source_catalog_v22  # noqa: F401
+from shop.services.category_v22 import sync_category_path
 
 from .site_api import _authorized, _json
 from .site_api_v14 import _product_row
 from .site_api_v16 import bot_api as v16_bot_api
 
 
-PAGE_SIZE = 25
+PAGE_SIZE = 45
 
 
 def _ordered_categories():
