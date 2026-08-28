@@ -10,19 +10,23 @@ from shop.services.source_bulk_job_v21 import run_full_sync
 
 class SourceBulkJobV21Tests(TestCase):
     def setUp(self):
-        self.first = SourceSite.objects.create(
-            name="همراه دوم",
-            base_url="https://hamrahedovom.ir",
+        self.first, _ = SourceSite.objects.update_or_create(
             hostname="hamrahedovom.ir",
-            is_active=True,
-            bulk_import_enabled=True,
+            defaults={
+                "name": "همراه دوم",
+                "base_url": "https://hamrahedovom.ir",
+                "is_active": True,
+                "bulk_import_enabled": True,
+            },
         )
-        self.second = SourceSite.objects.create(
-            name="مریوان فون",
-            base_url="https://marivanphone.com",
+        self.second, _ = SourceSite.objects.update_or_create(
             hostname="marivanphone.com",
-            is_active=True,
-            bulk_import_enabled=True,
+            defaults={
+                "name": "مریوان فون",
+                "base_url": "https://marivanphone.com",
+                "is_active": True,
+                "bulk_import_enabled": True,
+            },
         )
 
     def test_existing_products_are_synced_before_discovery_for_each_source(self):
