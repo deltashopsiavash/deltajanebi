@@ -38,7 +38,10 @@ def _worker_alive(pid):
 
 def _dead_worker_job(job_id, job):
     current = dict(job or {})
-    if current.get("status") not in {"queued", "running"}:
+    # A newly-spawned process can remain queued for a brief moment before the
+    # management command writes its first running heartbeat. Only apply liveness
+    # failure detection after the worker has actually entered running state.
+    if current.get("status") != "running":
         return current
     pid = current.get("worker_pid")
     if not pid or _worker_alive(pid):
@@ -94,8 +97,6 @@ def bot_api(request):
             return JsonResponse({"ok": False, "error": "spawn_failed", "detail": str(exc)[:700]}, status=500)
         log_handle.close()
 
-        # Preserve state in case the child already advanced from queued -> running
-        # before Popen returned, and only add its OS pid for liveness checks.
         job = read_job(job_id) or {"status": "queued"}
         try:
             worker_pid = int(process.pid)
