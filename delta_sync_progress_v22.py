@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Phase-aware Telegram progress for Delta full catalog sync v22."""
+"""Phase-aware Telegram progress for Delta full catalog sync v23."""
 import re
+import time
 
 import delta_source_restore as source
 
@@ -25,13 +26,10 @@ def _overall_percent(job):
         local = 0.45 * _ratio(job.get("phase_checked"), job.get("phase_total"))
     elif phase == "discovering":
         elapsed_ratio = _ratio(job.get("discover_elapsed"), job.get("discover_budget"))
-        # Discovery has an explicit heartbeat. Cap its visual share below 100%
-        # because URL processing still follows after discovery completes.
         local = 0.45 + 0.20 * min(0.97, elapsed_ratio)
     elif phase == "syncing_new":
         local = 0.65 + 0.35 * _ratio(job.get("phase_checked"), job.get("phase_total"))
     elif status == "failed":
-        # Keep the last meaningful progress rather than falsely showing 100%.
         local = min(0.99, _ratio(job.get("checked"), job.get("total")))
     else:
         local = min(0.99, _ratio(job.get("checked"), job.get("total")))
@@ -65,8 +63,17 @@ def install():
                 done = int(job.get("phase_checked") or 0)
                 total = int(job.get("phase_total") or 0)
                 extras.append(f"📍 پیشرفت همین مرحله: {done:,} / {total:,}")
+                started = float(job.get("item_started_at") or 0)
+                timeout = int(job.get("item_timeout") or 0)
+                if started > 0:
+                    elapsed = max(0, int(time.time() - started))
+                    if timeout:
+                        extras.append(f"⏱ محصول فعلی: {elapsed:,} / {timeout:,} ثانیه")
+                        extras.append("🛡 اگر این محصول پاسخ ندهد، خودکار رد می‌شود و Sync ادامه پیدا می‌کند.")
+                    else:
+                        extras.append(f"⏱ زمان محصول فعلی: {elapsed:,} ثانیه")
             elif phase == "discovering":
-                extras.append("✅ نوار پیشرفت در مرحله کشف هم زنده است و متوقف نمی‌ماند.")
+                extras.append("🛡 کشف کاتالوگ فعال است؛ صفحات کند سقف زمانی دارند و خودکار رد می‌شوند.")
 
         if status in {"completed", "failed"}:
             deleted = int(job.get("products_deleted") or 0)
