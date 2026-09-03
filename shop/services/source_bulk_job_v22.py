@@ -1,8 +1,9 @@
-"""Full catalog sync v23.
+"""Full catalog sync v24.
 
-Keeps v22's category/identity policies but adds a hard per-product watchdog so a
-single broken page, slow image, DNS lookup or parser can never freeze the whole
-catalog job indefinitely.
+Keeps v22's category/identity policies, a hard per-product watchdog, and now a
+PostgreSQL advisory lock shared with the periodic sync container. The old /tmp
+flock only protected processes inside the web container, so manual and automatic
+syncs could run at the same time and exhaust CPU/RAM/network resources.
 """
 import os
 import signal
@@ -17,6 +18,7 @@ from shop.services import source_bulk_job_v21 as base
 from shop.services import category_v22
 from shop.services import source_identity_v22 as identity
 from shop.services.source_sync import SourceNotProductError
+from shop.services.source_sync_lock import catalog_sync_lock
 
 base.upsert_source_product_with_changes = catalog.upsert_source_product_with_changes
 base.import_unpriced_catalog_product = catalog.import_unpriced_catalog_product
@@ -40,13 +42,7 @@ class ProductDeadlineExceeded(TimeoutError):
 
 @contextmanager
 def _product_deadline():
-    """Enforce a true wall-clock deadline for one URL on Linux/main thread.
-
-    Socket read timeouts are inactivity limits, not total duration. SIGALRM also
-    covers DNS, HTML parsing, image analysis and the unpriced retry path. The
-    management command runs in the main thread on Linux, so this is the final
-    safety net that guarantees the loop advances to the next product.
-    """
+    """Enforce a true wall-clock deadline for one URL on Linux/main thread."""
     supported = (
         hasattr(signal, "SIGALRM")
         and hasattr(signal, "setitimer")
@@ -134,4 +130,17 @@ def _sync_urls(job_id, state, site, urls, phase):
 
 
 base._sync_urls = _sync_urls
-run_full_sync = base.run_full_sync
+_base_run_full_sync = base.run_full_sync
+
+
+def run_full_sync(job_id):
+    """Run one manual full sync only when no other catalog writer is active."""
+    with catalog_sync_lock() as acquired:
+        if not acquired:
+            return base.write_job(job_id, {
+                "status": "failed",
+                "phase": "failed",
+                "error": "another_sync_is_running",
+                "message": "همگام‌سازی خودکار یا دستی دیگری در حال اجراست؛ این اجرا شروع نشد.",
+            })
+        return _base_run_full_sync(job_id)
