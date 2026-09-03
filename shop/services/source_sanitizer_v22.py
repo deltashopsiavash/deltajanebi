@@ -1,16 +1,19 @@
-"""Strict source image/text sanitizer for Delta catalog v22.
+"""Strict source image/text sanitizer for Delta catalog v23.
 
 Source product photos are never trusted merely because their URL came from a
-Product schema. v22 downloads every candidate, accepts studio-like product
-imagery only, removes peripheral watermark/logo components, stores a local WEBP
-copy and drops suspicious advertising/banner candidates instead of falling back
-to the unclean source image.
+Product schema. Every candidate is downloaded with a real wall-clock deadline,
+accepted only when it looks like studio product imagery, stripped of peripheral
+watermark/logo components, stored locally as WEBP, and otherwise dropped rather
+than falling back to an unclean source image.
 """
 import hashlib
 import io
+import os
 import re
+import time
 from urllib.parse import urlparse
 
+import requests
 from PIL import Image, ImageDraw, ImageOps
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -18,9 +21,14 @@ from django.core.files.storage import default_storage
 from shop.services import source_sanitizer as old
 from shop.source_registry import registered_source_for_url
 
-CLEANUP_VERSION = "4"
-MAX_GALLERY_IMAGES = 10
+# Bump both the cache key and storage directory so products previously cleaned by
+# the older heuristic are actually re-inspected on the next sync.
+CLEANUP_VERSION = "5"
+MAX_GALLERY_IMAGES = max(1, min(int(os.getenv("DELTA_SOURCE_MAX_CLEAN_IMAGES", "6")), 10))
 THUMB_MAX = 420
+IMAGE_CONNECT_TIMEOUT = max(1.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_CONNECT_TIMEOUT", "3")), 10.0))
+IMAGE_READ_TIMEOUT = max(1.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_READ_TIMEOUT", "3")), 10.0))
+IMAGE_WALL_TIMEOUT = max(2.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_WALL_TIMEOUT", "4.5")), 20.0))
 
 _PROMO_TOKENS = (
     "logo", "watermark", "brandmark", "banner", "slider", "slide", "advert", "ads-", "-ads",
@@ -47,6 +55,69 @@ def _suspicious_url(url, site):
     return False
 
 
+def _download_image_bounded(url):
+    """Download one image with both inactivity and real wall-clock limits.
+
+    ``requests`` timeout alone is not a total transfer deadline: a remote host
+    can keep a connection alive indefinitely by trickling bytes. Catalog sync
+    used to appear frozen when that happened during image cleaning. Streaming
+    lets us abandon such an image without abandoning the product or the job.
+    """
+    if not old._validate_public_image_url(url):
+        return None
+
+    response = None
+    started = time.monotonic()
+    deadline = started + IMAGE_WALL_TIMEOUT
+    headers = {
+        "User-Agent": "DeltaJanebiImageCleaner/2.0",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
+        "Connection": "close",
+    }
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=(IMAGE_CONNECT_TIMEOUT, IMAGE_READ_TIMEOUT),
+            stream=True,
+            allow_redirects=True,
+        )
+        if response.status_code >= 400 or not old._validate_public_image_url(response.url):
+            return None
+        ctype = (response.headers.get("Content-Type") or "").lower()
+        if ctype and not ctype.startswith("image/"):
+            return None
+        try:
+            declared = int(response.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            declared = 0
+        if declared > old.MAX_IMAGE_BYTES:
+            return None
+
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if time.monotonic() >= deadline:
+                return None
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > old.MAX_IMAGE_BYTES:
+                return None
+            chunks.append(chunk)
+        if time.monotonic() >= deadline:
+            return None
+        return b"".join(chunks)
+    except requests.RequestException:
+        return None
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
+
+
 def _box_intersection(a, b):
     x1, y1 = max(a[0], b[0]), max(a[1], b[1])
     x2, y2 = min(a[2], b[2]), min(a[3], b[3])
@@ -62,8 +133,6 @@ def _strict_studio_clean(image):
         return None
     ratio = max(original.width, original.height) / max(1, min(original.width, original.height))
     if ratio > 1.85:
-        # Product galleries are normally close to square/portrait; very wide or
-        # very tall source assets are overwhelmingly banners/marketing artwork.
         return None
 
     thumb = original.copy()
@@ -73,9 +142,6 @@ def _strict_studio_clean(image):
     avg = sum(background) / 3
     spread = max(background) - min(background)
     if avg < 205 or spread > 42:
-        # On a complex/lifestyle background we cannot reliably distinguish an
-        # embedded source watermark from the product without OCR/segmentation.
-        # Strict mode therefore drops it rather than leak source advertising.
         return None
 
     comps = old._components(old._foreground_mask(thumb, background, threshold=30))
@@ -89,8 +155,6 @@ def _strict_studio_clean(image):
     for comp in comps:
         bw = comp["x2"] - comp["x1"] + 1
         bh = comp["y2"] - comp["y1"] + 1
-        # Main product pieces are large relative to the dominant component. Text
-        # logos/watermarks typically break into much smaller connected pieces.
         if comp["area"] >= max_area * 0.16 and bw < w * 0.94 and bh < h * 0.96:
             majors.append(comp)
     if not majors:
@@ -104,9 +168,6 @@ def _strict_studio_clean(image):
     if union_w < w * 0.18 or union_h < h * 0.18:
         return None
 
-    # Refuse images whose detected subject itself occupies essentially the full
-    # canvas; this pattern is common for designed ad cards rather than a studio
-    # product on background.
     subject_ratio = (union_w * union_h) / max(1, w * h)
     if subject_ratio > 0.91:
         return None
@@ -117,9 +178,6 @@ def _strict_studio_clean(image):
     draw = ImageDraw.Draw(work)
     major_boxes = [(c["x1"], c["y1"], c["x2"] + 1, c["y2"] + 1) for c in majors]
 
-    # Erase small/medium components in the outer 24% band. This is intentionally
-    # stricter than v3: source logos, website handles and corner callouts are
-    # removed even when they sit beside (not fully outside) the product bounds.
     for comp in comps:
         if comp in majors:
             continue
@@ -131,8 +189,6 @@ def _strict_studio_clean(image):
         if not outer:
             continue
         box = (comp["x1"], comp["y1"], comp["x2"] + 1, comp["y2"] + 1)
-        # Keep a component if it substantially overlaps a detected major product
-        # piece; otherwise it is safe to blank using the measured background.
         overlap = max((_box_intersection(box, major) for major in major_boxes), default=0)
         if overlap > comp["area"] * 0.35:
             continue
@@ -142,8 +198,6 @@ def _strict_studio_clean(image):
         by2 = min(original.height, int((comp["y2"] + 6) * scale_y))
         draw.rectangle((bx1, by1, bx2, by2), fill=background)
 
-    # Crop around the actual product. Besides improving presentation this removes
-    # source text/watermarks that sit outside the product cluster altogether.
     pad_x = max(4, int(union_w * 0.075))
     pad_y = max(4, int(union_h * 0.075))
     crop = (
@@ -171,11 +225,11 @@ def _clean_image_url(url, site):
     key = hashlib.sha256(
         f"{CLEANUP_VERSION}|{site.id}|{site.brand_terms}|{url}".encode("utf-8")
     ).hexdigest()[:32]
-    path = f"products/clean-v22/{site.id}/{key}.webp"
+    path = f"products/clean-v23/{site.id}/{key}.webp"
     if default_storage.exists(path):
         return default_storage.url(path)
 
-    raw = old._download_image(url)
+    raw = _download_image_bounded(url)
     if not raw:
         return ""
     try:
@@ -215,8 +269,6 @@ def sanitize_scraped_product(data, source_url):
         cleaned["gallery"] = accepted
         cleaned["image_rejected"] = False
     elif urls:
-        # Critical difference from v3: do not fall back to an unverified source
-        # URL. This prevents a previously-detected ad/logo from leaking back in.
         cleaned["image_url"] = ""
         cleaned["gallery"] = []
         cleaned["image_rejected"] = True
