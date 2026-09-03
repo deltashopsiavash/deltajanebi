@@ -1,10 +1,11 @@
-"""Strict source image/text sanitizer for Delta catalog v23.
+"""Strict source image/text sanitizer for Delta catalog v24.
 
 Source product photos are never trusted merely because their URL came from a
 Product schema. Every candidate is downloaded with a real wall-clock deadline,
 accepted only when it looks like studio product imagery, stripped of peripheral
 watermark/logo components, stored locally as WEBP, and otherwise dropped rather
-than falling back to an unclean source image.
+than falling back to an unclean source image. Oversized compressed images are
+rejected before RGB expansion so one product cannot OOM-kill the sync worker.
 """
 import hashlib
 import io
@@ -21,14 +22,14 @@ from django.core.files.storage import default_storage
 from shop.services import source_sanitizer as old
 from shop.source_registry import registered_source_for_url
 
-# Bump both the cache key and storage directory so products previously cleaned by
-# the older heuristic are actually re-inspected on the next sync.
 CLEANUP_VERSION = "5"
 MAX_GALLERY_IMAGES = max(1, min(int(os.getenv("DELTA_SOURCE_MAX_CLEAN_IMAGES", "6")), 10))
 THUMB_MAX = 420
 IMAGE_CONNECT_TIMEOUT = max(1.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_CONNECT_TIMEOUT", "3")), 10.0))
 IMAGE_READ_TIMEOUT = max(1.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_READ_TIMEOUT", "3")), 10.0))
 IMAGE_WALL_TIMEOUT = max(2.0, min(float(os.getenv("DELTA_SOURCE_IMAGE_WALL_TIMEOUT", "4.5")), 20.0))
+MAX_DECODE_PIXELS = max(2_000_000, min(int(os.getenv("DELTA_SOURCE_IMAGE_MAX_PIXELS", "12000000")), 30_000_000))
+MAX_DECODE_DIMENSION = max(1800, min(int(os.getenv("DELTA_SOURCE_IMAGE_MAX_DIMENSION", "5500")), 9000))
 
 _PROMO_TOKENS = (
     "logo", "watermark", "brandmark", "banner", "slider", "slide", "advert", "ads-", "-ads",
@@ -56,19 +57,11 @@ def _suspicious_url(url, site):
 
 
 def _download_image_bounded(url):
-    """Download one image with both inactivity and real wall-clock limits.
-
-    ``requests`` timeout alone is not a total transfer deadline: a remote host
-    can keep a connection alive indefinitely by trickling bytes. Catalog sync
-    used to appear frozen when that happened during image cleaning. Streaming
-    lets us abandon such an image without abandoning the product or the job.
-    """
     if not old._validate_public_image_url(url):
         return None
 
     response = None
-    started = time.monotonic()
-    deadline = started + IMAGE_WALL_TIMEOUT
+    deadline = time.monotonic() + IMAGE_WALL_TIMEOUT
     headers = {
         "User-Agent": "DeltaJanebiImageCleaner/2.0",
         "Accept": "image/avif,image/webp,image/*,*/*;q=0.8",
@@ -127,10 +120,17 @@ def _box_intersection(a, b):
 
 
 def _strict_studio_clean(image):
-    """Return a local-safe product canvas or None for ambiguous promo imagery."""
-    original = ImageOps.exif_transpose(image).convert("RGB")
-    if original.width < 280 or original.height < 280:
+    """Return a local-safe product canvas or None for ambiguous/unsafe imagery."""
+    width, height = image.size
+    if width < 280 or height < 280:
         return None
+    # A small compressed JPEG can expand to hundreds of MB in RGB. Check the
+    # header dimensions while Pillow is still lazy, before exif transpose/convert
+    # allocates full pixel buffers and possibly gets the detached worker OOM-killed.
+    if width * height > MAX_DECODE_PIXELS or max(width, height) > MAX_DECODE_DIMENSION:
+        return None
+
+    original = ImageOps.exif_transpose(image).convert("RGB")
     ratio = max(original.width, original.height) / max(1, min(original.width, original.height))
     if ratio > 1.85:
         return None
