@@ -1,11 +1,14 @@
-"""Full catalog sync v22.
+"""Full catalog sync v23.
 
-Keeps v21's detached/incremental job behavior, upgrades its category/identity
-policies, raises discovery limits for complete catalogs, and exposes per-phase
-counters so Telegram progress never appears frozen during discovery.
+Keeps v22's category/identity policies but adds a hard per-product watchdog so a
+single broken page, slow image, DNS lookup or parser can never freeze the whole
+catalog job indefinitely.
 """
 import os
+import signal
+import threading
 import time
+from contextlib import contextmanager
 
 # Import the v22 catalog bridge before v21 bulk so all legacy call sites have the
 # same identity/category behavior in this process.
@@ -22,16 +25,54 @@ base.consolidate_sibling_duplicates = category_v22.consolidate_sibling_duplicate
 base.consolidate_duplicate_products = identity.consolidate_duplicate_products
 base.aggregate_product = identity.aggregate_product
 
-# Discovery used to stop after 75 seconds / 220 listing pages. That was useful
-# while the bot had no discovery heartbeat, but it is too small for a complete
-# wholesale catalog. v22 shows live discovery progress, so completion is now
-# favored: sitemap traversal may inspect up to 2,000 maps and listing fallback up
-# to 5,000 pages, with a 30-minute safety ceiling per source. Environment values
-# can still raise these limits for exceptionally large catalogs.
+# Discovery keeps a generous catalog-wide allowance, while each individual
+# product below has its own much smaller hard deadline.
 base.DISCOVERY_BUDGET = max(300, int(os.getenv("DELTA_SOURCE_DISCOVERY_BUDGET", "1800")))
 base.DISCOVERY_MAX_SITEMAPS = max(250, int(os.getenv("DELTA_SOURCE_DISCOVERY_MAX_SITEMAPS", "2000")))
 base.DISCOVERY_MAX_PAGES = max(300, int(os.getenv("DELTA_SOURCE_DISCOVERY_MAX_PAGES", "5000")))
 base.PRODUCT_DELAY = max(0.0, min(float(os.getenv("DELTA_SOURCE_PRODUCT_DELAY", "0.02")), 1.0))
+PRODUCT_WALL_SECONDS = max(12.0, min(float(os.getenv("DELTA_SOURCE_PRODUCT_WALL_TIMEOUT", "35")), 180.0))
+
+
+class ProductDeadlineExceeded(TimeoutError):
+    pass
+
+
+@contextmanager
+def _product_deadline():
+    """Enforce a true wall-clock deadline for one URL on Linux/main thread.
+
+    Socket read timeouts are inactivity limits, not total duration. SIGALRM also
+    covers DNS, HTML parsing, image analysis and the unpriced retry path. The
+    management command runs in the main thread on Linux, so this is the final
+    safety net that guarantees the loop advances to the next product.
+    """
+    supported = (
+        hasattr(signal, "SIGALRM")
+        and hasattr(signal, "setitimer")
+        and threading.current_thread() is threading.main_thread()
+    )
+    if not supported:
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def handler(_signum, _frame):
+        raise ProductDeadlineExceeded(
+            f"product_sync_timeout: سقف {int(PRODUCT_WALL_SECONDS)} ثانیه برای این محصول تمام شد"
+        )
+
+    signal.signal(signal.SIGALRM, handler)
+    signal.setitimer(signal.ITIMER_REAL, PRODUCT_WALL_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if previous_timer[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, previous_timer[0], previous_timer[1])
 
 
 def _sync_urls(job_id, state, site, urls, phase):
@@ -40,31 +81,42 @@ def _sync_urls(job_id, state, site, urls, phase):
     state["phase_total"] = len(urls)
     state["phase_checked"] = 0
     state["current_site"] = site.name
+    state["item_started_at"] = 0
+    state["item_timeout"] = int(PRODUCT_WALL_SECONDS)
     base.write_job(job_id, state)
 
     for url in urls:
         state["current_url"] = str(url)[:500]
+        state["item_started_at"] = time.time()
+        state["item_timeout"] = int(PRODUCT_WALL_SECONDS)
         base.write_job(job_id, state)
         try:
-            _, created, changes = catalog.upsert_source_product_with_changes(site, url)
-            if created:
-                state["created"] += 1
-            if created or changes:
-                state["changed"] += 1
-        except catalog.CatalogSkip as exc:
-            try:
-                _, created = catalog.import_unpriced_catalog_product(site, url)
-                if created:
-                    state["created"] += 1
-                    state["changed"] += 1
-                base._warn(state, f"{site.name}: بدون قیمت وارد/به‌روزرسانی شد: {exc}")
-            except SourceNotProductError as nested:
-                base._mark_source_missing(site, url)
-                state["skipped"] += 1
-                base._warn(state, f"{site.name}: {nested}")
-            except Exception as nested:
-                state["errors"] += 1
-                base._warn(state, f"{site.name}: import-unpriced: {nested}")
+            with _product_deadline():
+                try:
+                    _, created, changes = catalog.upsert_source_product_with_changes(site, url)
+                    if created:
+                        state["created"] += 1
+                    if created or changes:
+                        state["changed"] += 1
+                except catalog.CatalogSkip as exc:
+                    try:
+                        _, created = catalog.import_unpriced_catalog_product(site, url)
+                        if created:
+                            state["created"] += 1
+                            state["changed"] += 1
+                        base._warn(state, f"{site.name}: بدون قیمت وارد/به‌روزرسانی شد: {exc}")
+                    except SourceNotProductError as nested:
+                        base._mark_source_missing(site, url)
+                        state["skipped"] += 1
+                        base._warn(state, f"{site.name}: {nested}")
+                    except ProductDeadlineExceeded:
+                        raise
+                    except Exception as nested:
+                        state["errors"] += 1
+                        base._warn(state, f"{site.name}: import-unpriced: {nested}")
+        except ProductDeadlineExceeded as exc:
+            state["errors"] += 1
+            base._warn(state, f"{site.name}: {exc}; محصول رد شد و Sync ادامه یافت.")
         except SourceNotProductError as exc:
             base._mark_source_missing(site, url)
             state["skipped"] += 1
@@ -75,6 +127,7 @@ def _sync_urls(job_id, state, site, urls, phase):
 
         state["checked"] += 1
         state["phase_checked"] += 1
+        state["item_started_at"] = 0
         base.write_job(job_id, state)
         if base.PRODUCT_DELAY:
             time.sleep(base.PRODUCT_DELAY)
