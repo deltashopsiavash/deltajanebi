@@ -97,7 +97,12 @@ def bot_api(request):
         # Preserve state in case the child already advanced from queued -> running
         # before Popen returned, and only add its OS pid for liveness checks.
         job = read_job(job_id) or {"status": "queued"}
-        job["worker_pid"] = process.pid
+        try:
+            worker_pid = int(process.pid)
+        except (TypeError, ValueError):
+            worker_pid = 0
+        if worker_pid > 0:
+            job["worker_pid"] = worker_pid
         write_job(job_id, job)
         return JsonResponse({"ok": True, "data": {"job_id": job_id, "status": job.get("status", "queued")}})
 
