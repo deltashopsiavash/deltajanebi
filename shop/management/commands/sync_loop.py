@@ -4,11 +4,36 @@ import time
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from shop.management.commands.telegram_bot_v8 import _catalog_urls, _change_lines, _chunk_changes
+from shop.management.commands.telegram_bot_v8 import _change_lines, _chunk_changes
 from shop.models import SourceSite
-from shop.services.source_catalog_v22 import CatalogSkip, source_products, upsert_source_product_with_changes
+from shop.services.source_bulk_job_v21 import _existing_urls
+from shop.services.source_bulk_job_v22 import ProductDeadlineExceeded, _product_deadline
+from shop.services.source_catalog_v22 import CatalogSkip, upsert_source_product_with_changes
+from shop.services.source_discovery_v19 import discover_product_urls_bounded
 from shop.services.source_sync import SourceNotProductError
+from shop.services.source_sync_lock import catalog_sync_lock
 from shop.services.telegram_notify import notify_admins
+
+AUTO_DISCOVERY_BUDGET = max(30, min(int(os.getenv("DELTA_AUTO_DISCOVERY_BUDGET", "180")), 600))
+AUTO_DISCOVERY_MAX_SITEMAPS = max(30, min(int(os.getenv("DELTA_AUTO_DISCOVERY_MAX_SITEMAPS", "250")), 1000))
+AUTO_DISCOVERY_MAX_PAGES = max(40, min(int(os.getenv("DELTA_AUTO_DISCOVERY_MAX_PAGES", "400")), 1500))
+
+
+def _catalog_urls_bounded(site):
+    """Refresh known offers and discover additions without an unbounded crawl."""
+    existing = list(dict.fromkeys(_existing_urls(site)))
+    if not site.bulk_import_enabled:
+        return existing
+
+    discovered, meta = discover_product_urls_bounded(
+        site,
+        budget_seconds=AUTO_DISCOVERY_BUDGET,
+        max_sitemaps=AUTO_DISCOVERY_MAX_SITEMAPS,
+        max_pages=AUTO_DISCOVERY_MAX_PAGES,
+    )
+    site.last_discovered_count = len(discovered)
+    site.save(update_fields=["last_discovered_count"])
+    return list(dict.fromkeys([*discovered, *existing]))
 
 
 class Command(BaseCommand):
@@ -27,17 +52,21 @@ class Command(BaseCommand):
         for site in sites:
             self.stdout.write(f"Syncing source: {site.name} ({site.hostname})")
             try:
-                urls = _catalog_urls(site)
+                urls = _catalog_urls_bounded(site)
             except Exception as exc:
                 errors.append(f"{site.name} discovery: {str(exc)[:160]}")
-                urls = list(source_products(site).exclude(source_url="").values_list("source_url", flat=True))
+                urls = list(dict.fromkeys(_existing_urls(site)))
 
             for url in urls:
                 checked += 1
                 try:
-                    product, created, changes = upsert_source_product_with_changes(site, url)
+                    with _product_deadline():
+                        product, created, changes = upsert_source_product_with_changes(site, url)
                     if created or changes:
                         change_lines.extend(_change_lines(site, product, created, changes))
+                except ProductDeadlineExceeded as exc:
+                    if len(errors) < 20:
+                        errors.append(f"{site.name}: {str(exc)[:160]}\n🔗 {url}")
                 except (SourceNotProductError, CatalogSkip):
                     skipped += 1
                 except Exception as exc:
@@ -83,10 +112,25 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         interval = max(300, int(os.getenv("SOURCE_SYNC_INTERVAL", "1800")))
-        self.stdout.write(f"Automatic catalog sync interval: {interval} seconds")
+        initial_delay = max(0, min(int(os.getenv("DELTA_AUTO_SYNC_INITIAL_DELAY", "300")), interval))
+        self.stdout.write(
+            f"Automatic catalog sync interval: {interval} seconds; initial delay: {initial_delay} seconds"
+        )
+
+        # update-site recreates this container. Previously it immediately started
+        # a second full crawl exactly when the administrator typically pressed
+        # «همگام‌سازی همه», so two independent containers processed the same
+        # catalog concurrently. Give manual maintenance a quiet startup window.
+        if initial_delay:
+            time.sleep(initial_delay)
+
         while True:
             try:
-                self._run_cycle()
+                with catalog_sync_lock() as acquired:
+                    if not acquired:
+                        self.stdout.write("Catalog sync busy in another container; automatic cycle skipped.")
+                    else:
+                        self._run_cycle()
             except Exception as exc:
                 self.stderr.write(str(exc))
                 notify_admins(f"⚠️ خطای کلی Sync خودکار: {str(exc)[:700]}")
