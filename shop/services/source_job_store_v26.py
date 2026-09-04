@@ -1,9 +1,9 @@
-"""Durable catalog-sync job queue/state for Delta v26.
+"""Durable catalog-sync job queue/state for Delta v27.
 
 The old implementation kept progress in /tmp JSON files owned by the web
-container. That made worker liveness fragile and progress disappear on container
-restarts. This module stores the single active manual job and every heartbeat in
-PostgreSQL so web, supervisor and Telegram API always observe the same state.
+container. Manual jobs are stored in PostgreSQL so web, supervisor and Telegram
+always observe one durable state. A job may target all active source sites or a
+single SourceSite while still using the same deployment-wide catalog lock.
 """
 import uuid
 from datetime import timedelta
@@ -23,7 +23,11 @@ ACTIVE = {SourceCatalogJob.QUEUED, SourceCatalogJob.RUNNING}
 MAX_WARNINGS = 20
 
 
-def initial_state():
+def initial_state(target_source_site_id=0, target_source_site_name=""):
+    try:
+        target_id = max(0, int(target_source_site_id or 0))
+    except (TypeError, ValueError):
+        target_id = 0
     return {
         "phase": "queued",
         "sites": 0,
@@ -54,7 +58,10 @@ def initial_state():
         "item_timeout": 0,
         "item_mode": "",
         "warnings": [],
-        "engine_version": 26,
+        "target_source_site_id": target_id,
+        "target_source_site_name": str(target_source_site_name or "")[:200],
+        "sync_scope": "single_source" if target_id else "all_sources",
+        "engine_version": 27,
         "job_store": "database",
     }
 
@@ -79,7 +86,7 @@ def job_to_dict(job):
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-        "engine_version": 26,
+        "engine_version": 27,
         "job_store": "database",
     })
     return data
@@ -89,17 +96,24 @@ def active_job():
     return SourceCatalogJob.objects.filter(status__in=ACTIVE).order_by("created_at").first()
 
 
-def create_or_get_active_job():
+def create_or_get_active_job(target_source_site_id=0, target_source_site_name=""):
+    """Create one durable job, optionally scoped to exactly one source site.
+
+    Only one manual catalog job may be active deployment-wide. If another job is
+    already queued/running, callers reattach to it instead of creating a second
+    writer; its original scope is intentionally preserved.
+    """
     current = active_job()
     if current:
         return job_to_dict(current), True
 
+    state = initial_state(target_source_site_id, target_source_site_name)
     job_id = uuid.uuid4().hex
     try:
         job = SourceCatalogJob.objects.create(
             job_id=job_id,
             status=SourceCatalogJob.QUEUED,
-            state=initial_state(),
+            state=state,
             active_slot=1,
         )
         return job_to_dict(job), False
@@ -148,8 +162,10 @@ def write_job(job_id, payload):
         for key, value in payload.items():
             if key not in {"job_id", "status", "created_at", "updated_at", "heartbeat_at", "heartbeat_age"}:
                 merged[key] = value
-        merged["engine_version"] = 26
+        merged["engine_version"] = 27
         merged["job_store"] = "database"
+        target_id = int(merged.get("target_source_site_id") or 0)
+        merged["sync_scope"] = "single_source" if target_id else "all_sources"
 
         job.state = merged
         job.status = status
@@ -192,7 +208,7 @@ def claim_next_job():
         job.heartbeat_at = now
         state = initial_state()
         state.update(dict(job.state or {}))
-        state.update({"phase": "waiting_worker", "engine_version": 26, "job_store": "database"})
+        state.update({"phase": "waiting_worker", "engine_version": 27, "job_store": "database"})
         job.state = state
         job.save(update_fields=["status", "started_at", "heartbeat_at", "state", "updated_at"])
         return job_to_dict(job)
