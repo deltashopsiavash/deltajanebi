@@ -145,3 +145,24 @@ class SourceCatalogJob(models.Model):
                 name="enh_one_active_source_catalog_job",
             )
         ]
+
+
+class HelpPage(models.Model):
+    """Manager-controlled footer/help page used by the storefront and register terms link."""
+
+    slug = models.SlugField(max_length=120, unique=True)
+    title = models.CharField(max_length=140)
+    content = models.TextField(blank=True)
+    is_visible = models.BooleanField(default=True, db_index=True)
+    is_builtin = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        verbose_name = "صفحه راهنما"
+        verbose_name_plural = "صفحات راهنما"
+
+    def __str__(self):
+        return self.title
