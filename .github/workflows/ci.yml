@@ -103,7 +103,7 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_home_categories_v30.py delta_banner_controls_v31.py delta_sync_progress_v19.py delta_sync_progress_v20.py delta_catalog_ui_v20.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py bot_catalog_regression_v20.py bot_banner_regression_v31.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_home_categories_v30.py delta_banner_controls_v31.py delta_help_pages_v33.py delta_sync_progress_v19.py delta_sync_progress_v20.py delta_catalog_ui_v20.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py bot_catalog_regression_v20.py bot_banner_regression_v31.py bot_help_pages_regression_v33.py
       - name: Mixed DB isolation and native capability contract
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Native footer flow regression
@@ -114,6 +114,8 @@ jobs:
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_catalog_regression_v20.py
       - name: Delta banner desktop/mobile regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_banner_regression_v31.py
+      - name: Delta help-page controls regression
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_help_pages_regression_v33.py
       - name: Entrypoint import smoke test
         run: |
           PYTHONPATH=/tmp/sanashop-runtime python - <<'PY'
@@ -125,6 +127,7 @@ jobs:
           import delta_sync_progress_v20 as progress20
           import delta_catalog_ui_v20 as catalog
           import delta_banner_controls_v31 as banners
+          import delta_help_pages_v33 as help_pages
           assert callable(entry.run) and callable(entry.cancel)
           assert callable(router.routed_site_panel) and callable(router.detect_platform)
           assert callable(delta.callback) and callable(delta.message) and callable(delta.media)
@@ -133,12 +136,14 @@ jobs:
           assert callable(progress20.install) and callable(progress20.progress_text)
           assert callable(catalog.install) and callable(catalog.show_products)
           assert callable(banners.install) and callable(banners.callback)
+          assert callable(help_pages.install) and callable(help_pages.callback)
           assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
           assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
           assert getattr(delta, "_delta_catalog_ui_v20_installed", False) is True
           assert getattr(delta, "_delta_banner_controls_v31_installed", False) is True
+          assert getattr(delta, "_delta_help_pages_v33_installed", False) is True
           assert getattr(source, "_delta_sync_progress_v20_installed", False) is True
-          print("Delta native multi-site + footer + source + catalog + banner imports: OK")
+          print("Delta native multi-site + footer + source + catalog + banner + help-page imports: OK")
           PY
       - name: Installer runtime regression check
         run: |
