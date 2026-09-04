@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Delta source-site controls plus resilient v27 sync monitoring."""
+"""Delta source controls, resilient sync monitoring and v29 cleanup terms."""
 import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,6 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import delta_bot_native as native
 
 _ORIGINAL_CALLBACK = native.callback
+_ORIGINAL_MESSAGE = native.message
 _TERMINAL = {"completed", "failed", "cancelled"}
 _MONITORS = set()
 
@@ -279,8 +280,61 @@ async def callback(update, context):
     return await _ORIGINAL_CALLBACK(update, context)
 
 
+async def message(update, context):
+    """Save cleanup terms through the v29 endpoint and apply them immediately."""
+    if context.user_data.get("flow") != "d_sourceterms":
+        return await _ORIGINAL_MESSAGE(update, context)
+
+    sid = context.user_data.get("site_id")
+    source_id = context.user_data.get("source_id")
+    site = native._site(update.effective_user.id, sid) if sid else None
+    if not site or not source_id:
+        context.user_data.clear()
+        await update.message.reply_text("❌ سایت منبع یا دسترسی پیدا نشد.")
+        return True
+
+    text = str(getattr(update.message, "text", "") or "").strip()
+    if not text:
+        await update.message.reply_text("عبارت‌های پاکسازی را با کاما، ویرگول فارسی یا هر خط جدا بفرست؛ - برای خالی کردن.")
+        return True
+
+    try:
+        result = (await native.core.api(
+            site,
+            "delta_source_terms_update",
+            {
+                "id": int(source_id),
+                "brand_terms": "" if text == "-" else text,
+                "apply_existing": True,
+            },
+            timeout=90,
+        ))["data"]
+    except Exception as exc:
+        await update.message.reply_text(
+            f"❌ ذخیره/اجرای فیلتر ناموفق بود:\n{str(exc)[:700]}\n\nعبارت‌ها هنوز در این مرحله قابل ویرایش‌اند؛ دوباره بفرست."
+        )
+        return True
+
+    context.user_data.clear()
+    changed = int(result.get("products_changed") or 0)
+    offers = int(result.get("offers_changed") or 0)
+    terms = result.get("brand_terms") or "-"
+    await update.message.reply_text(
+        "✅ عبارات پاکسازی ذخیره و اجرا شد.\n"
+        f"🧹 فیلتر فعال: {terms}\n"
+        f"♻️ محصولات اصلاح‌شده: {changed:,}\n"
+        f"📦 داده‌های منبع اصلاح‌شده: {offers:,}\n\n"
+        "از این به بعد Syncهای بعدی هم همین فیلتر را اعمال می‌کنند؛ فاصله، نیم‌فاصله و ویرگول فارسی هم پشتیبانی می‌شود.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ منبع", callback_data=f"d:source:{sid}:{int(source_id)}")]
+        ]),
+    )
+    return True
+
+
 def install():
     if getattr(native, "_delta_source_restore_v18_installed", False):
         return
     native.callback = callback
+    native.message = message
     native._delta_source_restore_v18_installed = True
