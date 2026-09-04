@@ -10,7 +10,7 @@ from shop.models import Category, Product
 
 # Install the current catalog policy before importing the legacy API chain. This
 # preserves every existing endpoint while keeping single-product calls aligned
-# with the same v22 category/identity behavior as full sync.
+# with the current category/identity behavior as full sync.
 from shop.services import source_catalog_v22  # noqa: F401
 from shop.services.category_v22 import sync_category_path
 
@@ -20,6 +20,25 @@ from .site_api_v16 import bot_api as v16_bot_api
 
 
 PAGE_SIZE = 45
+
+
+def _category_descendant_ids(category_id):
+    """Return category + every descendant without relying on recursive SQL."""
+    pairs = list(Category.objects.values_list("id", "parent_id"))
+    children = defaultdict(list)
+    for item_id, parent_id in pairs:
+        children[parent_id].append(item_id)
+    result = []
+    queue = [int(category_id)]
+    seen = set()
+    while queue:
+        item_id = queue.pop(0)
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        result.append(item_id)
+        queue.extend(children.get(item_id, []))
+    return result
 
 
 def _ordered_categories():
@@ -33,6 +52,22 @@ def _ordered_categories():
     for item in items:
         by_parent[item.parent_id].append(item)
 
+    count_cache = {}
+
+    def subtree_count(item_id, trail=None):
+        if item_id in count_cache:
+            return count_cache[item_id]
+        trail = set(trail or ())
+        if item_id in trail:
+            return int(getattr(by_id.get(item_id), "active_product_count", 0) or 0)
+        trail.add(item_id)
+        item = by_id.get(item_id)
+        total = int(getattr(item, "active_product_count", 0) or 0)
+        for child in by_parent.get(item_id, []):
+            total += subtree_count(child.id, trail)
+        count_cache[item_id] = total
+        return total
+
     ordered = []
     visited = set()
 
@@ -41,6 +76,7 @@ def _ordered_categories():
             return
         visited.add(item.id)
         current_path = [*path, item.name]
+        direct = int(item.active_product_count or 0)
         ordered.append({
             "id": item.id,
             "name": item.name,
@@ -49,7 +85,8 @@ def _ordered_categories():
             "is_active": item.is_active,
             "parent_id": item.parent_id,
             "has_image": bool(item.image_url),
-            "product_count": int(item.active_product_count or 0),
+            "direct_product_count": direct,
+            "product_count": subtree_count(item.id),
         })
         for child in by_parent.get(item.id, []):
             walk(child, current_path, depth + 1)
@@ -98,7 +135,12 @@ def bot_api(request):
             page = max(1, int(payload.get("page") or 1))
         except (TypeError, ValueError):
             page = 1
+        try:
+            category_id = max(0, int(payload.get("category_id") or 0))
+        except (TypeError, ValueError):
+            return JsonResponse({"ok": False, "error": "invalid_category_id"}, status=400)
 
+        category = None
         rows = Product.objects.select_related("category").order_by("-created_at", "-id")
         if mode == "manual":
             rows = rows.filter(source_type=Product.MANUAL)
@@ -109,6 +151,13 @@ def bot_api(request):
             rows = rows.filter(sale_price__isnull=False)
             rows = rows.filter(Q(sale_starts_at__isnull=True) | Q(sale_starts_at__lte=now))
             rows = rows.filter(Q(sale_ends_at__isnull=True) | Q(sale_ends_at__gt=now))
+
+        if category_id:
+            category = Category.objects.filter(pk=category_id).first()
+            if not category:
+                return JsonResponse({"ok": False, "error": "category_not_found"}, status=404)
+            rows = rows.filter(category_id__in=_category_descendant_ids(category_id))
+
         if query:
             rows = rows.filter(
                 Q(name__icontains=query)
@@ -127,6 +176,7 @@ def bot_api(request):
             "data": items,
             "mode": mode,
             "query": query,
+            "category": ({"id": category.id, "name": category.name} if category else None),
             "pagination": {
                 "page": page,
                 "pages": pages,
