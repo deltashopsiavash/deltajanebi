@@ -33,14 +33,7 @@ _PAGINATION_QUERY_KEYS = {
 
 
 def _canonical_listing_url(value):
-    """Drop sort/filter/tracking query strings from category/listing URLs.
-
-    WooCommerce category pages can expose hundreds of URLs such as
-    ``?orderby=price`` or attribute filters. Crawling every combination turns a
-    finite catalog into a near-infinite graph and was the main reason discovery
-    could appear frozen on one category. Keep only query parameters that can
-    actually advance pagination.
-    """
+    """Drop sort/filter/tracking query strings from category/listing URLs."""
     text = str(value or "").split("#", 1)[0].strip()
     if not text:
         return ""
@@ -64,14 +57,7 @@ def _safe_get(
     accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     heartbeat=None,
 ):
-    """Fetch one discovery resource with both socket and wall-clock bounds.
-
-    ``requests`` read timeouts are inactivity timeouts, not total transfer
-    deadlines. A server that trickles a few bytes every few seconds can therefore
-    keep ``requests.get`` alive for minutes. Streaming here gives every URL a
-    real wall-clock ceiling and a response-size ceiling, so one pathological
-    category can never hold the whole catalog job hostage.
-    """
+    """Fetch one discovery resource with socket, size and wall-clock bounds."""
     if not catalog._same_source(url, site) or not allowed_url(url):
         return None
     remaining = deadline - time.monotonic()
@@ -88,7 +74,7 @@ def _safe_get(
         response = requests.get(
             url,
             headers={
-                "User-Agent": "DeltaJanebiCatalogSync/2.3",
+                "User-Agent": "DeltaJanebiCatalogSync/2.6",
                 "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.5",
                 "Accept": accept,
                 "Connection": "close",
@@ -101,6 +87,10 @@ def _safe_get(
             response.close()
             return None
         if not catalog._same_source(response.url, site) or not allowed_url(response.url):
+            response.close()
+            return None
+        ctype = (response.headers.get("Content-Type") or "").lower()
+        if "text/html" not in ctype and "xml" not in ctype and "text/plain" not in ctype and ctype:
             response.close()
             return None
 
@@ -152,13 +142,14 @@ def discover_product_urls_bounded(
     budget_seconds=None,
     max_sitemaps=None,
     max_pages=None,
+    on_product=None,
+    stop_requested=None,
 ):
-    """Discover as much of a source catalog as possible without hanging a sync job.
+    """Discover catalog URLs while preserving partial progress under hard limits.
 
-    Discovery has a source-wide deadline, each HTTP request has its own hard
-    transfer deadline, filter/sort URL variants are collapsed, and large listing
-    pages periodically emit heartbeats while their links are inspected. Products
-    found before any limit is reached are retained and synced normally.
+    ``on_product`` is called as soon as each URL is found so an external
+    supervisor can persist partial discovery before parsing the next page.
+    ``stop_requested`` lets automatic sync yield quickly to a manual job.
     """
     budget = float(budget_seconds or DEFAULT_BUDGET_SECONDS)
     sitemap_limit = int(max_sitemaps or DEFAULT_MAX_SITEMAPS)
@@ -174,8 +165,17 @@ def discover_product_urls_bounded(
     requests_done = 0
     phase = "sitemaps"
     current_url = ""
+    stopped = False
 
     def expired():
+        nonlocal stopped
+        if stop_requested:
+            try:
+                if stop_requested():
+                    stopped = True
+                    return True
+            except Exception:
+                pass
         return time.monotonic() >= deadline
 
     def heartbeat():
@@ -191,6 +191,7 @@ def discover_product_urls_bounded(
                 "elapsed": int(time.monotonic() - started),
                 "budget": int(budget),
                 "current_url": current_url[:500],
+                "stopped": stopped,
             })
         except Exception:
             pass
@@ -206,6 +207,7 @@ def discover_product_urls_bounded(
             site,
             deadline,
             accept or "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            heartbeat=heartbeat,
         )
         requests_done += 1
         heartbeat()
@@ -216,6 +218,11 @@ def discover_product_urls_bounded(
         if clean and clean not in seen_products and catalog._same_source(clean, site):
             seen_products.add(clean)
             products.append(clean)
+            if on_product:
+                try:
+                    on_product(clean)
+                except Exception:
+                    pass
 
     def add_listing(value):
         clean = _canonical_listing_url(value)
@@ -257,6 +264,8 @@ def discover_product_urls_bounded(
                     queue.append(child)
         elif kind == "urls":
             for loc in locs:
+                if expired():
+                    break
                 if not catalog._same_source(loc, site):
                     continue
                 if catalog._looks_product_url(loc, sitemap_url):
@@ -334,7 +343,8 @@ def discover_product_urls_bounded(
 
     elapsed = int(time.monotonic() - started)
     meta = {
-        "timed_out": expired(),
+        "timed_out": time.monotonic() >= deadline,
+        "stopped": stopped,
         "requests": requests_done,
         "found": len(products),
         "sitemaps": len(seen_sitemaps),
