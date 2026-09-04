@@ -29,14 +29,17 @@ class DeltaSiteApiV27Tests(TestCase):
         child = Category.objects.create(name="کابل", slug="", parent=root)
         other = Category.objects.create(name="هدفون", slug="")
 
-        Product.objects.bulk_create([
-            Product(name=f"محصول {index}", price=1000 + index, stock=1, category=(child if index >= 46 else root))
-            for index in range(50)
-        ])
-        Product.objects.bulk_create([
-            Product(name=f"هدفون {index}", price=2000 + index, stock=1, category=other)
-            for index in range(3)
-        ])
+        # Product.save() generates unique slugs/public codes. Use the production
+        # save path here rather than bulk_create, which intentionally bypasses it.
+        for index in range(50):
+            Product.objects.create(
+                name=f"محصول {index}",
+                price=1000 + index,
+                stock=1,
+                category=(child if index >= 46 else root),
+            )
+        for index in range(3):
+            Product.objects.create(name=f"هدفون {index}", price=2000 + index, stock=1, category=other)
 
         first = self.api("delta_products", {"mode": "all", "page": 1})
         self.assertEqual(first.status_code, 200, first.content)
