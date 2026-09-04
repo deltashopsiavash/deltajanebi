@@ -160,13 +160,9 @@ def run_discovery_isolated(
     max_sitemaps,
     max_pages,
     progress=None,
+    stop_requested=None,
 ):
-    """Discover one source in a child that can be killed even inside DNS/lxml C code.
-
-    Partial product URLs are appended to a separate file immediately. If the
-    child stops heartbeating, the parent kills it and still returns every URL
-    found before the stall so the catalog sync continues rather than freezing.
-    """
+    """Discover one source in a killable child and preserve partial URLs."""
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     token = f"discover-{os.getpid()}-{int(site.pk or 0)}-{uuid.uuid4().hex}"
     result_path = TMP_DIR / f"{token}.result.json"
@@ -200,6 +196,7 @@ def run_discovery_isolated(
     log_handle = None
     stalled = False
     hard_timed_out = False
+    stopped = False
 
     try:
         log_handle = log_path.open("ab")
@@ -232,6 +229,14 @@ def run_discovery_isolated(
                         except Exception:
                             pass
 
+            if stop_requested:
+                try:
+                    if stop_requested():
+                        stopped = True
+                        kill_process_group(process)
+                        break
+                except Exception:
+                    pass
             if now - last_heartbeat > DISCOVERY_STALL_SECONDS:
                 stalled = True
                 kill_process_group(process)
@@ -252,10 +257,13 @@ def run_discovery_isolated(
         meta["found"] = len(urls)
         meta["stalled"] = bool(stalled)
         meta["hard_timed_out"] = bool(hard_timed_out)
+        meta["stopped"] = bool(stopped)
         meta["worker_exit"] = process.returncode if process else None
 
         warning = ""
-        if stalled:
+        if stopped:
+            warning = f"{site.name}: کشف خودکار برای اولویت دادن به Sync دستی متوقف شد؛ {len(urls)} URL پیدا‌شده حفظ شد."
+        elif stalled:
             warning = (
                 f"{site.name}: discovery_hard_stall: کشف بیش از {int(DISCOVERY_STALL_SECONDS)} ثانیه "
                 f"بدون heartbeat ماند؛ پردازش کشف Kill شد و {len(urls)} URL پیدا‌شده حفظ شد."
@@ -276,6 +284,7 @@ def run_discovery_isolated(
             "elapsed": int(time.monotonic() - started),
             "budget": int(budget_seconds),
             "stalled": True,
+            "stopped": stopped,
         }, f"{site.name}: discovery supervisor: {exc}"[:900]
     finally:
         if log_handle is not None:
