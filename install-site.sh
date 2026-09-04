@@ -89,8 +89,12 @@ SOURCE_ALLOWED_HOSTS=
 SOURCE_SYNC_INTERVAL=1800
 SOURCE_SYNC_DELAY=1.2
 SOURCE_REQUEST_TIMEOUT=20
-SOURCE_USER_AGENT=DeltaJanebiSync/2.0
+SOURCE_USER_AGENT=DeltaJanebiSync/2.6
 SOURCE_BRAND_TERMS=
+DELTA_SOURCE_PRODUCT_WALL_TIMEOUT=35
+DELTA_SOURCE_DISCOVERY_STALL_TIMEOUT=45
+DELTA_SOURCE_JOB_STALE_TIMEOUT=120
+DELTA_SOURCE_DNS_TIMEOUT=4
 STORE_NAME=$STORE_NAME
 STORE_PHONE=
 STORE_CARD_NUMBER=
@@ -117,9 +121,9 @@ log "اعتبارسنجی Compose و ساخت کامل image"
 docker compose config -q
 docker compose build --pull --no-cache web
 
-log "راه‌اندازی دیتابیس، سایت، Sync، رزرو و Caddy"
+log "راه‌اندازی دیتابیس، سایت، supervisor Sync دستی، Sync خودکار، رزرو و Caddy"
 docker compose up -d db
-docker compose up -d --force-recreate web sync reservations caddy
+docker compose up -d --force-recreate web syncjobs sync reservations caddy
 
 WEB_ID="$(docker compose ps -q --all web)"; [[ -n "$WEB_ID" ]] || fail "کانتینر web ساخته نشد."
 healthy=0
@@ -140,7 +144,9 @@ docker compose exec -T web python manage.py check --fail-level ERROR
 log "تست API اختصاصی DeltaJanebi"
 docker compose exec -T web sh -lc 'curl -fsS --max-time 15 -X POST -H "Host: $DOMAIN" -H "Content-Type: application/json" -H "Authorization: Bearer $DELTAJANEBI_BOT_API_KEY" --data '\''{"action":"ping","payload":{}}'\'' http://127.0.0.1:8000/api/bot/v1/ | grep -q '\''"ok": true\|"ok":true'\'''
 
-for svc in db web sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || fail "سرویس $svc ساخته نشد."; running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"; [[ "$running" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; fail "سرویس $svc در حال اجرا نیست."; }; done
+for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || fail "سرویس $svc ساخته نشد."; running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"; [[ "$running" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; fail "سرویس $svc در حال اجرا نیست."; }; done
+
+docker compose logs --tail=40 syncjobs | grep -q 'Delta source catalog supervisor v26 is ready' || { docker compose logs --tail=120 syncjobs >&2 || true; fail "supervisor Sync دستی آماده نشد."; }
 
 cat >/usr/local/bin/deltajanebi-update <<'EOF'
 #!/usr/bin/env bash
