@@ -10,7 +10,7 @@ class ShopConfig(AppConfig):
         # Product model or any of Delta's existing management flows.
         from shop import source_offer_models  # noqa: F401
         from shop.services import source_sync
-        from shop.services.source_sanitizer_v22 import sanitize_scraped_product
+        from shop.services.source_sanitizer_v27 import sanitize_scraped_product
         from shop.source_registry import (
             allowed_url,
             generic_category_names,
