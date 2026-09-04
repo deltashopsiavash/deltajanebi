@@ -74,13 +74,15 @@ set +a
 export DELTAJANEBI_RUNTIME_DIR="${DELTAJANEBI_RUNTIME_DIR:-$RUNTIME_DIR}"
 export PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "==> Preflight: syntax/import/router/source controls"
+echo "==> Preflight: syntax/import/router/source/help/title controls"
 "$APP_DIR/.venv/bin/python" -m py_compile \
   "$APP_DIR/external_bot_delta_v15.py" \
   "$APP_DIR/external_bot_delta_v16.py" \
   "$APP_DIR/delta_bot_native.py" \
   "$APP_DIR/delta_footer_restore.py" \
-  "$APP_DIR/delta_source_restore.py"
+  "$APP_DIR/delta_source_restore.py" \
+  "$APP_DIR/delta_help_pages_v33.py" \
+  "$APP_DIR/delta_site_title_v34.py"
 (
   cd "$APP_DIR"
   "$APP_DIR/.venv/bin/python" - <<'PY'
@@ -89,14 +91,20 @@ import external_bot_delta_v15 as router
 import delta_bot_native as delta
 import delta_footer_restore as footer
 import delta_source_restore as source
+import delta_help_pages_v33 as help_pages
+import delta_site_title_v34 as site_title
 assert callable(bot.run)
 assert callable(router.routed_site_panel)
 assert callable(delta.callback)
 assert callable(footer.install)
 assert callable(source.install)
+assert callable(help_pages.install)
+assert callable(site_title.install)
 assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
 assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
-print("Delta native multi-site bot source-control preflight: OK")
+assert getattr(delta, "_delta_help_pages_v33_installed", False) is True
+assert getattr(delta, "_delta_site_title_v34_installed", False) is True
+print("Delta native multi-site bot source/help/title controls preflight: OK")
 PY
 )
 
@@ -140,7 +148,7 @@ trap - ERR EXIT INT TERM
 rm -f "$SERVICE_BACKUP"
 echo "✅ ربات DeltaJanebi با موفقیت آپدیت شد."
 echo "✅ preflight قبل از توقف انجام شد؛ در خطای آپدیت نسخه قبلی خودکار برمی‌گردد."
-echo "✅ Router چندسایتی و کنترل‌های اختصاصی منبع Delta فعال هستند."
+echo "✅ Router چندسایتی، صفحات راهنما و کنترل عنوان سایت فعال هستند."
 echo "✅ توکن، مالک، دیتابیس اتصال سایت‌ها و مدیران حفظ شدند."
 echo "نسخه Delta: ${NEW_APP_SHA:0:7}"
 echo "نسخه runtime: ${NEW_RUNTIME_SHA:0:7}"
