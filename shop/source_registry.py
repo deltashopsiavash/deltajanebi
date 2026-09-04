@@ -1,6 +1,9 @@
 import ipaddress
 import json
+import os
 import socket
+import threading
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from urllib.parse import urlparse
@@ -10,6 +13,10 @@ from django.utils import timezone
 from .models import Product, SourceSite
 
 _ACTIVE_SOURCE_HOST = ContextVar("delta_active_source_host", default="")
+_DNS_CACHE = {}
+_DNS_CACHE_LOCK = threading.Lock()
+_DNS_TIMEOUT = max(1.0, min(float(os.getenv("DELTA_SOURCE_DNS_TIMEOUT", "4")), 15.0))
+_DNS_CACHE_SECONDS = max(10.0, min(float(os.getenv("DELTA_SOURCE_DNS_CACHE_SECONDS", "60")), 600.0))
 
 
 def canonical_hostname(value):
@@ -35,20 +42,58 @@ def normalize_site_url(value):
     return base_url, hostname
 
 
-def _validate_public_host(hostname, port):
-    try:
-        infos = socket.getaddrinfo(hostname, port)
-    except socket.gaierror as exc:
-        raise ValueError("دامنه قابل دسترسی/Resolve نیست.") from exc
-    if not infos:
-        raise ValueError("دامنه قابل Resolve نیست.")
-    for info in infos:
+def _resolve_with_deadline(hostname, port):
+    """Run libc DNS in a daemon thread so a wedged resolver cannot block Django."""
+    box = {}
+    done = threading.Event()
+
+    def worker():
         try:
-            ip = ipaddress.ip_address(info[4][0])
-        except ValueError:
-            raise ValueError("IP دامنه معتبر نیست.")
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            raise ValueError("این دامنه به شبکه داخلی یا IP غیرمجاز اشاره می‌کند.")
+            box["infos"] = socket.getaddrinfo(hostname, port)
+        except Exception as exc:
+            box["error"] = exc
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=worker, name="delta-source-dns", daemon=True)
+    thread.start()
+    if not done.wait(_DNS_TIMEOUT):
+        raise ValueError(f"زمان Resolve دامنه پس از {_DNS_TIMEOUT:g} ثانیه تمام شد.")
+    if box.get("error"):
+        raise ValueError("دامنه قابل دسترسی/Resolve نیست.") from box["error"]
+    return box.get("infos") or []
+
+
+def _validate_public_host(hostname, port):
+    key = (str(hostname or "").lower().strip("."), int(port))
+    now = time.monotonic()
+    with _DNS_CACHE_LOCK:
+        cached = _DNS_CACHE.get(key)
+        if cached and cached[0] > now:
+            if cached[1]:
+                return True
+            raise ValueError(cached[2])
+
+    try:
+        infos = _resolve_with_deadline(key[0], key[1])
+        if not infos:
+            raise ValueError("دامنه قابل Resolve نیست.")
+        for info in infos:
+            try:
+                ip = ipaddress.ip_address(info[4][0])
+            except ValueError as exc:
+                raise ValueError("IP دامنه معتبر نیست.") from exc
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+                raise ValueError("این دامنه به شبکه داخلی یا IP غیرمجاز اشاره می‌کند.")
+    except ValueError as exc:
+        # Negative results are cached briefly to avoid a DNS storm while still
+        # allowing a recently-fixed source to recover quickly.
+        with _DNS_CACHE_LOCK:
+            _DNS_CACHE[key] = (now + min(15.0, _DNS_CACHE_SECONDS), False, str(exc))
+        raise
+
+    with _DNS_CACHE_LOCK:
+        _DNS_CACHE[key] = (now + _DNS_CACHE_SECONDS, True, "")
     return True
 
 
