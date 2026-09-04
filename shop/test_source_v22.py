@@ -1,3 +1,4 @@
+from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw
 from django.test import TestCase
 
@@ -136,7 +137,7 @@ class SourceV22TestCase(TestCase):
         self.assertEqual({p.category.name for p in products}, {"فلش 16 گیگ", "فلش 128 گیگ"})
 
     def test_duplicate_product_rows_are_really_deleted_after_offer_merge(self):
-        key = "model:uv150|storage:128gb"
+        model_key = "model:uv150|storage:128gb"
         p1 = Product.objects.create(name="فلش UV150 128", source_type=Product.SYNCED, price=1, stock=2)
         p2 = Product.objects.create(name="ADATA UV150 128GB", source_type=Product.SYNCED, price=1, stock=4)
         for product, site, suffix, stock in ((p1, self.first, "a", 2), (p2, self.second, "b", 4)):
@@ -145,7 +146,7 @@ class SourceV22TestCase(TestCase):
                 product=product,
                 source_site=site,
                 source_url=data["source_url"],
-                model_key=key,
+                model_key=model_key,
                 source_price=100,
                 sale_price=100,
                 stock=stock,
@@ -161,26 +162,81 @@ class SourceV22TestCase(TestCase):
 
 
 class CategoryV22Tests(TestCase):
-    def test_existing_leaf_anywhere_is_reused_without_creating_new_branch(self):
-        existing_parent = Category.objects.create(name="کابل و تبدیل", slug="")
-        existing = Category.objects.create(name="کابل AUX", slug="", parent=existing_parent)
+    def test_existing_global_leaf_is_reused_and_reparented_to_exact_source_path(self):
+        wrong_parent = Category.objects.create(name="کابل و تبدیل", slug="")
+        existing = Category.objects.create(name="کابل AUX", slug="", parent=wrong_parent)
         before = Category.objects.count()
-        resolved = category_v22.sync_category_path(["لوازم صوتی", "کابل AUX"])
-        self.assertEqual(resolved.pk, existing.pk)
-        self.assertEqual(Category.objects.count(), before)
-        self.assertFalse(Category.objects.filter(name="لوازم صوتی").exists())
 
-    def test_global_duplicate_cleanup_moves_products_and_removes_duplicate(self):
+        resolved = category_v22.sync_category_path(["لوازم صوتی", "کابل AUX"])
+
+        self.assertEqual(resolved.pk, existing.pk)
+        self.assertEqual(Category.objects.count(), before + 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.parent.name, "لوازم صوتی")
+        self.assertEqual(Category.objects.filter(name="کابل AUX").count(), 1)
+
+    def test_woocommerce_breadcrumb_is_copied_in_source_order(self):
+        soup = BeautifulSoup(
+            """
+            <html><body>
+              <nav class="woocommerce-breadcrumb">
+                <a href="/">خانه</a>
+                <a href="/product-category/accessories/">لوازم جانبی</a>
+                <a href="/product-category/cables/">کابل و تبدیل</a>
+                <a href="/product-category/cables/aux/">کابل AUX</a>
+                محصول تست
+              </nav>
+              <h1 class="product_title">محصول تست</h1>
+            </body></html>
+            """,
+            "lxml",
+        )
+        self.assertEqual(
+            category_v22.enhanced_category_names(soup),
+            ["لوازم جانبی", "کابل و تبدیل", "کابل AUX"],
+        )
+
+    def test_global_duplicate_cleanup_keeps_one_category_and_product(self):
         a = Category.objects.create(name="شاخه اول", slug="")
         b = Category.objects.create(name="شاخه دوم", slug="")
         first = Category.objects.create(name="کابل AUX", slug="", parent=a)
         duplicate = Category.objects.create(name="کابل  AUX", slug="", parent=b)
         product = Product.objects.create(name="AUX", price=1000, stock=1, category=duplicate)
+
         stats = category_v22.consolidate_sibling_duplicates()
+
         product.refresh_from_db()
+        remaining = Category.objects.filter(name__contains="AUX")
         self.assertEqual(stats["categories_merged"], 1)
-        self.assertEqual(product.category_id, first.id)
-        self.assertFalse(Category.objects.filter(pk=duplicate.pk).exists())
+        self.assertEqual(remaining.count(), 1)
+        self.assertEqual(product.category_id, remaining.get().id)
+        self.assertFalse(Category.objects.filter(pk__in=[first.pk, duplicate.pk]).count() > 1)
+
+    def test_offer_paths_can_repair_old_parent_tree(self):
+        site = SourceSite.objects.create(
+            name="مریوان فون",
+            hostname="marivanphone.com",
+            base_url="https://marivanphone.com",
+            is_active=True,
+        )
+        wrong_root = Category.objects.create(name="دسته اشتباه", slug="")
+        leaf = Category.objects.create(name="کابل AUX", slug="", parent=wrong_root)
+        product = Product.objects.create(name="کابل تست", price=1000, stock=1, category=leaf, source_type=Product.SYNCED)
+        ProductSourceOffer.objects.create(
+            product=product,
+            source_site=site,
+            source_url="https://marivanphone.com/product/test/",
+            category_path=["لوازم جانبی", "کابل و تبدیل", "کابل AUX"],
+            payload={"name": "کابل تست", "specs": {}},
+            is_active=True,
+        )
+
+        stats = category_v22.rebuild_category_tree_from_offers(site.id)
+
+        leaf.refresh_from_db()
+        self.assertEqual(leaf.parent.name, "کابل و تبدیل")
+        self.assertEqual(leaf.parent.parent.name, "لوازم جانبی")
+        self.assertGreaterEqual(stats["categories_reparented"], 1)
 
 
 class StrictImageSanitizerV22Tests(TestCase):
