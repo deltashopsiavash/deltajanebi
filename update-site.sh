@@ -25,7 +25,7 @@ docker compose build --pull --no-cache web
 
 echo "==> راه‌اندازی و recreate سرویس‌ها"
 docker compose up -d db
-docker compose up -d --force-recreate web sync reservations caddy
+docker compose up -d --force-recreate web syncjobs sync reservations caddy
 
 WEB_ID="$(docker compose ps -q --all web)"
 [[ -n "$WEB_ID" ]] || { echo "❌ web ساخته نشد."; exit 1; }
@@ -50,11 +50,18 @@ if [[ -z "$API_KEY" ]]; then
   printf '\nDELTAJANEBI_BOT_API_KEY=%s\n' "$API_KEY" >>.env
   printf '%s\n' "$API_KEY" >/root/deltajanebi-bot-api-key.txt
   chmod 600 /root/deltajanebi-bot-api-key.txt
-  docker compose up -d --force-recreate web sync reservations
+  docker compose up -d --force-recreate web syncjobs sync reservations
 fi
 docker compose exec -T web sh -lc 'curl -fsS --max-time 15 -X POST -H "Host: $DOMAIN" -H "Content-Type: application/json" -H "Authorization: Bearer $DELTAJANEBI_BOT_API_KEY" --data '\''{"action":"ping","payload":{}}'\'' http://127.0.0.1:8000/api/bot/v1/ | grep -q '\''"ok": true\|"ok":true'\'''
 
-for svc in db web sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || { echo "❌ $svc پیدا نشد."; exit 1; }; [[ "$(docker inspect -f '{{.State.Running}}' "$cid")" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; exit 1; }; done
+for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || { echo "❌ $svc پیدا نشد."; exit 1; }; [[ "$(docker inspect -f '{{.State.Running}}' "$cid")" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; exit 1; }; done
+
+echo "==> تست supervisor همگام‌سازی"
+docker compose logs --tail=40 syncjobs | grep -q 'catalog supervisor v26 is ready\|Delta source catalog supervisor v26 is ready' || {
+  docker compose logs --tail=120 syncjobs >&2 || true
+  echo "❌ supervisor همگام‌سازی آماده نشد."
+  exit 1
+}
 
 docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose restart caddy
