@@ -1,9 +1,8 @@
-"""Delta source-catalog full sync v26.
+"""Delta source-catalog full sync v27.
 
 This is a clean orchestration layer: durable DB job state, deployment-wide lock,
-OS-isolated products, OS-isolated discovery with partial URL recovery, and only
-one pre/final global cleanup pass. It intentionally does not monkeypatch or call
-the v19-v25 bulk orchestrators.
+OS-isolated products, OS-isolated discovery with partial URL recovery, one
+pre/final cleanup pass, and explicit all-sources or single-source scope.
 """
 import os
 import time
@@ -212,8 +211,27 @@ def _discover(job_id, state, site):
     return urls
 
 
+def _selected_sites(previous):
+    try:
+        target_id = max(0, int(previous.get("target_source_site_id") or 0))
+    except (TypeError, ValueError):
+        target_id = 0
+    rows = SourceSite.objects.filter(is_active=True).order_by("id")
+    if target_id:
+        rows = rows.filter(pk=target_id)
+    sites = list(rows)
+    if target_id and not sites:
+        raise RuntimeError("سایت منبع انتخاب‌شده حذف یا غیرفعال شده است.")
+    return sites, target_id
+
+
 def _run_locked(job_id):
     previous = read_job(job_id) or {}
+    sites, target_id = _selected_sites(previous)
+    target_name = str(previous.get("target_source_site_name") or "")[:200]
+    if target_id and sites:
+        target_name = sites[0].name
+
     state = {
         "status": "running",
         "phase": "preparing",
@@ -245,13 +263,15 @@ def _run_locked(job_id):
         "item_timeout": 0,
         "item_mode": "",
         "warnings": list(previous.get("warnings") or [])[:MAX_WARNINGS],
-        "engine_version": 26,
+        "target_source_site_id": target_id,
+        "target_source_site_name": target_name,
+        "sync_scope": "single_source" if target_id else "all_sources",
+        "engine_version": 27,
         "job_store": "database",
     }
     _save(job_id, state)
 
     _pre_cleanup(job_id, state)
-    sites = list(SourceSite.objects.filter(is_active=True).order_by("id"))
     known_by_site = [(site, _existing_urls(site)) for site in sites]
     state["sites"] = len(sites)
     state["total"] = sum(len(urls) for _, urls in known_by_site)
@@ -317,7 +337,7 @@ def run_full_sync(job_id):
                     current.update({
                         "status": "failed",
                         "phase": "failed",
-                        "error": "bulk_sync_failed_v26",
+                        "error": "bulk_sync_failed_v27",
                         "message": str(exc)[:1200],
                         "item_started_at": 0,
                     })
