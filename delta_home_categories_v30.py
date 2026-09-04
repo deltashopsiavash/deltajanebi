@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Homepage category showcase controls for the external Delta bot."""
+"""Homepage product-category showcase controls for the external Delta bot."""
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import delta_bot_native as native
@@ -33,7 +33,7 @@ async def _source_list(q, site, sid):
             ),
         ])
     keys += [
-        [InlineKeyboardButton("🏠 دسته‌بندی صفحه اصلی از سایت منبع", callback_data=f"d:homecats:{sid}")],
+        [InlineKeyboardButton("🏠 دسته‌بندی محصولات صفحه اصلی از منبع", callback_data=f"d:homecats:{sid}")],
         [InlineKeyboardButton("🔄 همگام‌سازی همه سایت‌ها", callback_data=f"d:syncall:{sid}")],
         [InlineKeyboardButton("➕ ثبت سایت منبع", callback_data=f"d:sourceadd:{sid}")],
         [InlineKeyboardButton("⬅️ تنظیمات مدیریتی", callback_data=f"d:admin:{sid}")],
@@ -41,7 +41,7 @@ async def _source_list(q, site, sid):
     await native._edit(
         q,
         "🌐 سایت‌های منبع Delta\n\n"
-        "برای هر سایت می‌توانی جداگانه Sync بزنی، همه را یکجا همگام کنی، یا فقط چیدمان دسته‌بندی صفحه اصلی را از یکی از منابع کپی کنی.",
+        "برای هر سایت می‌توانی جداگانه Sync بزنی یا فقط بلوک «دسته‌بندی محصولات» صفحه اصلی را از یکی از منابع کپی کنی.",
         InlineKeyboardMarkup(keys),
     )
     return True
@@ -76,9 +76,9 @@ async def _choose_home_source(q, site, sid):
 
     await native._edit(
         q,
-        "🏠 دسته‌بندی صفحه اصلی را طبق کدام سایت منبع بچینم؟\n\n"
-        "نام، عکس و ترتیب کارت‌های دسته‌بندی از صفحه اصلی همان سایت خوانده می‌شود. "
-        "این عملیات به دسته‌بندی و ساختار منوی همبرگری دست نمی‌زند."
+        "🏠 بلوک «دسته‌بندی محصولات» صفحه اصلی را طبق کدام سایت منبع بچینم؟\n\n"
+        "فقط همان بخشی که روی سایت منبع عنوان «دسته‌بندی محصولات» دارد خوانده می‌شود؛ "
+        "بخش‌های دیگر صفحه، پیشنهادها، برندها، بنرها و منوی همبرگری اصلاً کپی یا تغییر داده نمی‌شوند."
         + current,
         InlineKeyboardMarkup(keys),
     )
@@ -86,11 +86,11 @@ async def _choose_home_source(q, site, sid):
 
 
 async def _clone(q, site, sid, source_id):
-    await q.answer("در حال خواندن صفحه اصلی منبع")
+    await q.answer("در حال خواندن دسته‌بندی محصولات")
     await native._edit(
         q,
-        "⏳ در حال خواندن دسته‌بندی‌های صفحه اصلی سایت منبع...\n"
-        "فقط بخش صفحه اصلی تغییر می‌کند؛ منوی همبرگری دست‌نخورده می‌ماند.",
+        "⏳ در حال خواندن فقط بلوک «دسته‌بندی محصولات» سایت منبع...\n"
+        "هیچ بخش دیگری از صفحه اصلی و منوی همبرگری تغییر نمی‌کند.",
     )
     try:
         result = (await native.core.api(
@@ -102,7 +102,7 @@ async def _clone(q, site, sid, source_id):
     except Exception as exc:
         await native._edit(
             q,
-            f"❌ کپی دسته‌بندی صفحه اصلی انجام نشد:\n{str(exc)[:800]}",
+            f"❌ کپی بلوک دسته‌بندی محصولات انجام نشد:\n{str(exc)[:800]}",
             InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ انتخاب سایت منبع", callback_data=f"d:homecats:{sid}")]]),
         )
         return True
@@ -113,11 +113,12 @@ async def _clone(q, site, sid, source_id):
         preview += f"\n• ... و {len(names) - 14} دسته دیگر"
     await native._edit(
         q,
-        f"✅ دسته‌بندی صفحه اصلی از «{result.get('source_site_name') or '-'}» کپی شد.\n\n"
-        f"📦 تعداد کارت‌ها: {int(result.get('count') or 0)}\n"
+        f"✅ فقط «دسته‌بندی محصولات» از «{result.get('source_site_name') or '-'}» کپی شد.\n\n"
+        f"📦 تعداد دسته‌ها: {int(result.get('count') or 0)}\n"
         f"🔗 متصل به دسته‌های فروشگاه: {int(result.get('matched_categories') or 0)}\n"
         f"🔎 بدون تطبیق مستقیم: {int(result.get('unmatched_categories') or 0)}\n"
-        f"🧭 منوی همبرگری: بدون تغییر\n\n{preview}",
+        f"🧭 منوی همبرگری: بدون تغییر\n"
+        f"🚫 سایر بخش‌های صفحه اصلی منبع: نادیده گرفته شد\n\n{preview}",
         InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 دوباره از همین منبع بخوان", callback_data=f"d:homecatclone:{sid}:{int(source_id)}")],
             [InlineKeyboardButton("🌐 انتخاب منبع دیگر", callback_data=f"d:homecats:{sid}")],
