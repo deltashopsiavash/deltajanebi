@@ -1,5 +1,6 @@
 from django.db.models import Count, Prefetch, Q
 
+from .home_category_models import HomeCategoryShowcase, HomeCategoryTile
 from .models import Announcement, AnnouncementRead, Category, Product, SiteSetting, SocialLink, TrustBadge
 
 
@@ -45,6 +46,21 @@ def store_context(request):
             )[:12]
         )
 
+    # Homepage showcase is intentionally independent from nav_categories. Choosing
+    # a source for the homepage therefore cannot mutate the hamburger menu tree.
+    home_category_showcase = None
+    home_category_tiles = []
+    if getattr(getattr(request, "resolver_match", None), "url_name", None) == "home":
+        home_category_showcase = HomeCategoryShowcase.objects.select_related("source_site").filter(pk=1, enabled=True).first()
+        if home_category_showcase:
+            home_category_tiles = list(
+                HomeCategoryTile.objects.filter(showcase=home_category_showcase, is_active=True)
+                .select_related("category")
+                .order_by("order", "id")[:48]
+            )
+            if not home_category_tiles:
+                home_category_showcase = None
+
     enamad_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ENAMAD).first() if settings else None
     zarinpal_badge = TrustBadge.objects.filter(is_active=True, badge_type=TrustBadge.ZARINPAL).first() if settings else None
 
@@ -56,6 +72,8 @@ def store_context(request):
     return {
         "store_settings": settings,
         "nav_categories": nav_categories,
+        "home_category_showcase": home_category_showcase,
+        "home_category_tiles": home_category_tiles,
         "social_links": SocialLink.objects.filter(is_active=True)[:12] if settings else [],
         "enamad_badge": enamad_badge,
         "zarinpal_badge": zarinpal_badge,
