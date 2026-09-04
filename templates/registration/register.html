@@ -16,7 +16,7 @@
         <label><span class="auth-field-label">ایمیل</span><div class="auth-input"><span class="auth-field-icon auth-email-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"></rect><path d="m5 7 7 5.2L19 7"></path><path d="m5.5 17 4.7-4M18.5 17l-4.7-4"></path></svg></span><input type="email" name="email" value="{{ form.email.value|default:'' }}" required autocomplete="email"></div></label>
         <label><span class="auth-field-label">شماره موبایل</span><div class="auth-input"><input type="tel" name="phone" value="{{ form.phone.value|default:'' }}" required autocomplete="tel" inputmode="tel" placeholder="09xxxxxxxxx" dir="ltr"></div></label>
         <div class="auth-two-col"><label><span>رمز عبور</span><div class="auth-input"><input type="password" name="password1" required autocomplete="new-password" placeholder="رمز عبور"></div></label><label><span>تکرار رمز</span><div class="auth-input"><input type="password" name="password2" required autocomplete="new-password" placeholder="تکرار رمز"></div></label></div>
-        <label class="auth-check auth-terms"><input type="checkbox" required><span>قوانین و شرایط استفاده از فروشگاه را می‌پذیرم.</span></label>
+        <label class="auth-check auth-terms"><input type="checkbox" required><span><a href="{% url 'terms' %}" target="_blank" rel="noopener" style="font-weight:900;color:var(--sf-blue);text-decoration:none">قوانین و شرایط استفاده از فروشگاه</a> را می‌پذیرم.</span></label>
         <button class="auth-primary" type="submit">ایجاد حساب و دریافت کد</button>
       </form>
       <div class="auth-switch-note">قبلاً حساب ساختی؟ <a href="{% url 'login' %}" style="color:var(--sf-blue);font-weight:900">ورود</a></div>
