@@ -1,7 +1,8 @@
 from django.db.models import F, Q
 from django.utils import timezone
 
-from .models import ProductAmazing, ProductStory
+from .help_pages import ensure_default_help_pages
+from .models import HelpPage, ProductAmazing, ProductStory
 
 
 def enhancement_context(request):
@@ -29,7 +30,14 @@ def enhancement_context(request):
         except Exception:
             amazing_offers = []
 
+    try:
+        ensure_default_help_pages()
+        help_pages = list(HelpPage.objects.filter(is_visible=True).order_by("sort_order", "id")[:30])
+    except Exception:
+        help_pages = []
+
     return {
         "product_stories": stories,
         "amazing_offers": amazing_offers,
+        "help_pages": help_pages,
     }
