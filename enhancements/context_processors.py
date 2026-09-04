@@ -2,7 +2,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from .help_pages import ensure_default_help_pages
-from .models import HelpPage, ProductAmazing, ProductStory
+from .models import AddonSetting, HelpPage, ProductAmazing, ProductStory
 
 
 def enhancement_context(request):
@@ -36,8 +36,14 @@ def enhancement_context(request):
     except Exception:
         help_pages = []
 
+    try:
+        site_title_override = (AddonSetting.load().site_title_override or "").strip()
+    except Exception:
+        site_title_override = ""
+
     return {
         "product_stories": stories,
         "amazing_offers": amazing_offers,
         "help_pages": help_pages,
+        "site_title_override": site_title_override,
     }
