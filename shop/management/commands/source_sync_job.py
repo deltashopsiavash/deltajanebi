@@ -1,10 +1,10 @@
 from django.core.management.base import BaseCommand
 
-from shop.services.source_bulk_job_v22 import run_full_sync
+from shop.services.source_bulk_job_v26 import run_full_sync
 
 
 class Command(BaseCommand):
-    help = "Run one DeltaJanebi v22 source-catalog sync job in a detached process."
+    help = "Run one DeltaJanebi v26 source-catalog sync job."
 
     def add_arguments(self, parser):
         parser.add_argument("job_id")
