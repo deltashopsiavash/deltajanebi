@@ -30,6 +30,9 @@ delta_footer_restore.install()
 import delta_source_restore  # noqa: E402
 
 delta_source_restore.install()
+import delta_home_categories_v30  # noqa: E402
+
+delta_home_categories_v30.install()
 import delta_sync_progress_v19  # noqa: E402
 
 delta_sync_progress_v19.install()
