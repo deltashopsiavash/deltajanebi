@@ -2,12 +2,14 @@ from PIL import Image, ImageDraw
 from django.test import SimpleTestCase
 
 from shop.services import source_sanitizer as legacy
-from shop.services import source_sanitizer_v22 as sanitizer
+from shop.services import source_sanitizer_v22 as base
+from shop.services import source_sanitizer_v27 as sanitizer
 
 
 class StrictImageSanitizerV27Tests(SimpleTestCase):
     def test_cleanup_version_forces_old_cached_images_to_be_rebuilt(self):
-        self.assertEqual(sanitizer.CLEANUP_VERSION, "7")
+        self.assertEqual(sanitizer.CLEANUP_VERSION, "8")
+        self.assertEqual(base.CLEANUP_VERSION, "8")
 
     def test_component_mask_discards_detached_logo_inside_crop_area(self):
         mask = Image.new("L", (220, 220), 0)
@@ -16,9 +18,9 @@ class StrictImageSanitizerV27Tests(SimpleTestCase):
         draw.rectangle((160, 95, 185, 115), fill=255)  # detached logo/text
 
         components = legacy._components(mask)
-        selected = sanitizer._choose_subject_components(components, 220, 220)
+        selected = base._choose_subject_components(components, 220, 220)
         self.assertTrue(selected)
-        product_only = sanitizer._subject_component_mask(mask, selected)
+        product_only = base._subject_component_mask(mask, selected)
 
         self.assertGreater(product_only.getpixel((110, 100)), 0)
         self.assertEqual(product_only.getpixel((170, 105)), 0)
@@ -27,8 +29,8 @@ class StrictImageSanitizerV27Tests(SimpleTestCase):
         image = Image.new("RGB", (700, 700), "white")
         draw = ImageDraw.Draw(image)
         draw.rectangle((230, 145, 470, 570), fill=(20, 20, 20))
-        # Deliberately close to the product. A plain bounding-box crop would
-        # retain part of this red source logo/ad; the component mask must not.
+        # Deliberately close to the product. The old pre-dilated foreground mask
+        # could bridge this red ad to the product and preserve it.
         draw.rectangle((475, 250, 530, 300), fill=(220, 20, 20))
 
         cleaned = sanitizer._strict_studio_clean(image)
