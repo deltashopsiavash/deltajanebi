@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Delta source-site controls plus resilient background full-sync monitoring."""
+"""Delta source-site controls plus resilient v27 sync monitoring."""
 import asyncio
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -18,7 +18,8 @@ def _is_source_command(data, names):
 
 def _source_markup(sid, x):
     xid = x["id"]
-    return InlineKeyboardMarkup([
+    rows = [
+        [InlineKeyboardButton("🔄 همگام‌سازی فقط همین سایت", callback_data=f"d:syncsource:{sid}:{xid}")],
         [
             InlineKeyboardButton(
                 f"📥 آپلود همه: {'روشن' if x['bulk_import_enabled'] else 'خاموش'}",
@@ -35,7 +36,8 @@ def _source_markup(sid, x):
             InlineKeyboardButton("🗑 حذف سایت", callback_data=f"d:sourcedelask:{sid}:{xid}"),
         ],
         [InlineKeyboardButton("⬅️ سایت‌های منبع", callback_data=f"d:sources:{sid}")],
-    ])
+    ]
+    return InlineKeyboardMarkup(rows)
 
 
 def _source_text(x):
@@ -48,6 +50,34 @@ def _source_text(x):
         f"🧹 پاکسازی: {x['brand_terms'] or '-'}\n"
         f"🔎 آخرین تعداد کشف‌شده: {x.get('last_discovered_count', 0)}\n"
         f"📦 محصولات مرتبط: {x['product_count']}"
+    )
+
+
+async def _show_sources(q, site, sid):
+    rows = (await native.core.api(site, "source_sites", timeout=35)).get("data") or []
+    keys = []
+    for item in rows:
+        xid = int(item["id"])
+        status = "✅" if item.get("is_active") else "⛔"
+        keys.append([
+            InlineKeyboardButton(
+                f"{status} {str(item.get('name') or '-')[:28]} | {int(item.get('product_count') or 0)}",
+                callback_data=f"d:source:{sid}:{xid}",
+            ),
+            InlineKeyboardButton(
+                "🔄 Sync" if item.get("is_active") else "⛔ خاموش",
+                callback_data=(f"d:syncsource:{sid}:{xid}" if item.get("is_active") else f"d:source:{sid}:{xid}"),
+            ),
+        ])
+    keys += [
+        [InlineKeyboardButton("🔄 همگام‌سازی همه سایت‌ها", callback_data=f"d:syncall:{sid}")],
+        [InlineKeyboardButton("➕ ثبت سایت منبع", callback_data=f"d:sourceadd:{sid}")],
+        [InlineKeyboardButton("⬅️ تنظیمات مدیریتی", callback_data=f"d:admin:{sid}")],
+    ]
+    await native._edit(
+        q,
+        "🌐 سایت‌های منبع Delta\n\nبرای هر سایت می‌توانی جداگانه Sync بزنی، یا همه سایت‌ها را یکجا همگام‌سازی کنی.",
+        InlineKeyboardMarkup(keys),
     )
 
 
@@ -67,8 +97,11 @@ def _progress_text(job):
     width = 16
     filled = min(width, int(width * percent / 100))
     bar = "█" * filled + "░" * (width - filled)
+    target_name = str(job.get("target_source_site_name") or "").strip()
+    single = str(job.get("sync_scope") or "") == "single_source" or bool(job.get("target_source_site_id"))
+    title = f"🔄 همگام‌سازی سایت «{target_name or 'انتخاب‌شده'}»" if single else "🔄 همگام‌سازی همه سایت‌های منبع"
     lines = [
-        "🔄 همگام‌سازی کامل کاتالوگ Delta",
+        title,
         "",
         f"{bar} {percent}%",
         f"📦 بررسی‌شده: {checked:,} / {total:,}",
@@ -82,7 +115,7 @@ def _progress_text(job):
     if job.get("status") == "queued":
         lines.append("⏳ در صف supervisor...")
     elif job.get("status") == "completed":
-        lines[0] = "✅ همگام‌سازی کامل کاتالوگ تمام شد"
+        lines[0] = (f"✅ همگام‌سازی «{target_name}» تمام شد" if single and target_name else "✅ همگام‌سازی کامل کاتالوگ تمام شد")
     elif job.get("status") in {"failed", "cancelled"}:
         lines[0] = "❌ همگام‌سازی کامل نشد"
         if job.get("message"):
@@ -95,14 +128,22 @@ def _progress_text(job):
     return "\n".join(lines)
 
 
+def _terminal_markup(sid, job):
+    target_id = int(job.get("target_source_site_id") or 0)
+    if target_id:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🌐 بازگشت به همین سایت منبع", callback_data=f"d:source:{sid}:{target_id}")],
+            [InlineKeyboardButton("🧭 تنظیمات مدیریتی", callback_data=f"d:admin:{sid}")],
+        ])
+    return native.admin_menu(sid)
+
+
 async def _progress_edit(q, text, markup=None):
     """Edit only the original progress message; never spam fallback messages."""
     try:
         await q.edit_message_text(text[:4000], reply_markup=markup)
         return True
     except Exception as exc:
-        # Telegram treats an identical edit as an error. That is a successful
-        # no-op for our monitor; every other error is retried on the next poll.
         if "message is not modified" in str(exc).casefold():
             return True
         return False
@@ -126,14 +167,12 @@ async def _monitor_sync(q, site, sid, job_id):
                 failures = 0
             except Exception:
                 failures += 1
-                # Do not terminate the monitor because one HTTPS request failed.
-                # The next poll reconnects to the same durable PostgreSQL job.
                 await asyncio.sleep(min(20, 5 + failures * 2))
                 continue
 
             text = _progress_text(job)
             if text != last_text:
-                markup = native.admin_menu(sid) if job.get("status") in _TERMINAL else None
+                markup = _terminal_markup(sid, job) if job.get("status") in _TERMINAL else None
                 if await _progress_edit(q, text, markup):
                     last_text = text
 
@@ -144,9 +183,48 @@ async def _monitor_sync(q, site, sid, job_id):
         _MONITORS.discard(key)
 
 
+async def _start_sync(q, context, site, sid, source_id=0):
+    await q.answer("در حال اتصال به Sync")
+    label = "همین سایت منبع" if source_id else "همه سایت‌های منبع"
+    await native._edit(q, f"⏳ اتصال {label} به صف همگام‌سازی پایدار...")
+    payload = {"source_site_id": int(source_id)} if source_id else {}
+    try:
+        started = (await native.core.api(site, "delta_source_sync_start", payload, timeout=25))["data"]
+    except Exception as exc:
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ سایت منبع", callback_data=f"d:source:{sid}:{source_id}")]]) if source_id else native.admin_menu(sid)
+        await native._edit(q, f"❌ شروع همگام‌سازی ناموفق بود:\n{str(exc)[:700]}", markup)
+        return True
+
+    job_id = started["job_id"]
+    key = (int(sid), str(job_id))
+    if started.get("reused"):
+        prefix = "🔁 یک Sync از قبل در حال اجرا بود؛ به همان Job وصل شدی.\n\n"
+    elif source_id:
+        prefix = f"✅ Sync اختصاصی سایت «{started.get('target_source_site_name') or label}» ساخته شد.\n\n"
+    else:
+        prefix = "✅ Sync همه سایت‌های منبع ساخته شد.\n\n"
+    await _progress_edit(q, prefix + _progress_text(started))
+
+    if key not in _MONITORS:
+        _MONITORS.add(key)
+        context.application.create_task(_monitor_sync(q, site, sid, job_id))
+    return True
+
+
 async def callback(update, context):
     q = update.callback_query
     data = q.data or ""
+
+    if _is_source_command(data, {"sources"}):
+        parts = data.split(":")
+        sid = int(parts[2])
+        site = native._site(q.from_user.id, sid)
+        if not site:
+            await q.answer("عدم دسترسی", show_alert=True)
+            return True
+        await q.answer()
+        await _show_sources(q, site, sid)
+        return True
 
     if _is_source_command(data, {"sourcebulk", "sourcetoggle"}):
         parts = data.split(":")
@@ -168,40 +246,35 @@ async def callback(update, context):
         ))["data"]
         if field == "bulk_import_enabled":
             prefix = (
-                "✅ آپلود همه فعال شد. با «همگام‌سازی همه»، تمام کاتالوگ قابل کشف سایت منبع همراه دسته‌بندی‌ها وارد می‌شود."
+                "✅ آپلود همه فعال شد. Sync این سایت یا Sync همه، کل کاتالوگ قابل کشف آن را وارد می‌کند."
                 if updated[field]
-                else "⛔ آپلود همه خاموش شد؛ فقط محصولات قبلاً ثبت‌شده همگام می‌شوند."
+                else "⛔ آپلود همه خاموش شد؛ فقط محصولات قبلاً ثبت‌شده این سایت همگام می‌شوند."
             )
         else:
             prefix = "✅ وضعیت سایت منبع تغییر کرد."
         await _show_source(q, site, sid, source_id, prefix)
         return True
 
-    if _is_source_command(data, {"syncall"}):
+    if _is_source_command(data, {"syncsource"}):
         parts = data.split(":")
-        uid = q.from_user.id
+        if len(parts) < 4 or not parts[3].isdigit():
+            return await _ORIGINAL_CALLBACK(update, context)
         sid = int(parts[2])
-        site = native._site(uid, sid)
+        source_id = int(parts[3])
+        site = native._site(q.from_user.id, sid)
         if not site:
             await q.answer("عدم دسترسی", show_alert=True)
             return True
-        await q.answer("در حال اتصال به Sync")
-        await native._edit(q, "⏳ اتصال به صف همگام‌سازی پایدار...")
-        try:
-            started = (await native.core.api(site, "delta_source_sync_start", timeout=25))["data"]
-        except Exception as exc:
-            await native._edit(q, f"❌ شروع همگام‌سازی ناموفق بود:\n{str(exc)[:700]}", native.admin_menu(sid))
+        return await _start_sync(q, context, site, sid, source_id=source_id)
+
+    if _is_source_command(data, {"syncall"}):
+        parts = data.split(":")
+        sid = int(parts[2])
+        site = native._site(q.from_user.id, sid)
+        if not site:
+            await q.answer("عدم دسترسی", show_alert=True)
             return True
-
-        job_id = started["job_id"]
-        key = (int(sid), str(job_id))
-        prefix = "🔁 به Sync در حال اجرای قبلی دوباره وصل شد.\n\n" if started.get("reused") else "✅ Job پایدار ساخته شد.\n\n"
-        await _progress_edit(q, prefix + _progress_text(started))
-
-        if key not in _MONITORS:
-            _MONITORS.add(key)
-            context.application.create_task(_monitor_sync(q, site, sid, job_id))
-        return True
+        return await _start_sync(q, context, site, sid, source_id=0)
 
     return await _ORIGINAL_CALLBACK(update, context)
 
