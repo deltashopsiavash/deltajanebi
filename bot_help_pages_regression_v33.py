@@ -141,7 +141,10 @@ async def test_help_list_and_edit_flow():
 
 def test_install_contract():
     assert getattr(native, "_delta_help_pages_v33_installed", False) is True
-    assert native.settings_menu is helpui.settings_menu
+    assert callable(native.settings_menu)
+    items = callbacks(native.settings_menu(7))
+    # Later feature packs may wrap the settings menu; the v33 help entry must remain.
+    assert "d:helppages:7" in items
 
 
 if __name__ == "__main__":
