@@ -8,6 +8,7 @@ a full or single-source sync, which repairs historical imports without manual
 category deletion.
 """
 import json
+import re
 from collections import Counter, defaultdict
 
 from django.db import transaction
@@ -122,8 +123,7 @@ def enhanced_category_names(soup):
                 value = value.get("name")
             text = str(value or "")
             # Some stores serialize "parent > child > leaf" into one field.
-            parts = [part for part in __import__("re").split(r"\s*(?:>|»|›)\s*", text) if part]
-            path.extend(parts)
+            path.extend(part for part in re.split(r"\s*(?:>|»|›)\s*", text) if part)
         path = _clean_path(path, product_title)
         if path:
             return path
@@ -144,13 +144,6 @@ def canonical_path(raw_names, product_name="", specs=None):
         return cleaned
     inferred = infer_top_category(product_name, specs)
     return [inferred] if inferred else []
-
-
-def _depth(item):
-    try:
-        return max(0, len(item.ancestor_chain()) - 1)
-    except Exception:
-        return 999
 
 
 def _category_score(item):
@@ -227,9 +220,8 @@ def sync_category_path(names):
 
     The old v22 behavior returned an existing leaf immediately, leaving it under
     whatever historical parent happened to exist. v28 walks the whole source
-    path and re-parents reused rows to the source hierarchy, so e.g. a category
-    imported under the wrong root is repaired on the next sync instead of being
-    duplicated.
+    path and re-parents reused rows to the source hierarchy, so a category under
+    the wrong root is repaired on the next sync instead of being duplicated.
     """
     values = []
     seen = set()
@@ -285,33 +277,12 @@ def _merge_duplicate(duplicate, canonical, stats):
 
 
 @transaction.atomic
-def consolidate_sibling_duplicates():
-    """Merge normalized duplicates globally without inventing parallel rows."""
-    stats = {"categories_merged": 0, "products_recategorized": 0}
-    groups = defaultdict(list)
-    for item in Category.objects.all().order_by("id"):
-        item_key = key(item.name)
-        if item_key:
-            groups[item_key].append(item)
-
-    for _, items in groups.items():
-        live = [item for item in items if Category.objects.filter(pk=item.pk).exists()]
-        if len(live) < 2:
-            continue
-        canonical = max(live, key=_category_score)
-        for duplicate in live:
-            if duplicate.pk != canonical.pk and Category.objects.filter(pk=duplicate.pk).exists():
-                _merge_duplicate(duplicate, canonical, stats)
-    return stats
-
-
-@transaction.atomic
 def rebuild_category_tree_from_offers(source_site_id=0):
     """Reconstruct the category parent graph from stored source breadcrumb paths.
 
-    For a single-site sync that site's hierarchy is authoritative. For an all-site
-    sync, the most frequently observed parent relationship wins deterministically
-    when multiple sources disagree about where an equal global category belongs.
+    For a single-site data set that site's hierarchy is authoritative. Across all
+    sites, the most frequently observed parent relationship wins deterministically
+    when sources disagree about where an equal global category belongs.
     """
     from shop.source_offer_models import ProductSourceOffer
 
@@ -346,14 +317,8 @@ def rebuild_category_tree_from_offers(source_site_id=0):
     if not parent_votes:
         return {"category_paths_scanned": scanned, "categories_reparented": 0, "categories_created_from_offers": 0}
 
-    desired_parent = {
-        item_key: votes.most_common(1)[0][0]
-        for item_key, votes in parent_votes.items()
-    }
-    desired_label = {
-        item_key: votes.most_common(1)[0][0]
-        for item_key, votes in label_votes.items()
-    }
+    desired_parent = {item_key: votes.most_common(1)[0][0] for item_key, votes in parent_votes.items()}
+    desired_label = {item_key: votes.most_common(1)[0][0] for item_key, votes in label_votes.items()}
     desired_depth = {
         item_key: min(votes, key=lambda depth: (-votes[depth], depth))
         for item_key, votes in depth_votes.items()
@@ -366,8 +331,6 @@ def rebuild_category_tree_from_offers(source_site_id=0):
         parent_key = desired_parent[item_key]
         parent = resolved.get(parent_key) if parent_key else None
         if parent_key and parent is None:
-            # Parent may be an existing category that did not receive its own
-            # vote because a legacy path was truncated.
             parent = _best_global(parent_key)
         category = _best_global(item_key)
         if category is None:
@@ -385,6 +348,30 @@ def rebuild_category_tree_from_offers(source_site_id=0):
         "categories_reparented": reparented,
         "categories_created_from_offers": created,
     }
+
+
+@transaction.atomic
+def consolidate_sibling_duplicates():
+    """Merge duplicate rows, then rebuild parent relationships from source data."""
+    stats = {"categories_merged": 0, "products_recategorized": 0}
+    groups = defaultdict(list)
+    for item in Category.objects.all().order_by("id"):
+        item_key = key(item.name)
+        if item_key:
+            groups[item_key].append(item)
+
+    for _, items in groups.items():
+        live = [item for item in items if Category.objects.filter(pk=item.pk).exists()]
+        if len(live) < 2:
+            continue
+        canonical = max(live, key=_category_score)
+        for duplicate in live:
+            if duplicate.pk != canonical.pk and Category.objects.filter(pk=duplicate.pk).exists():
+                _merge_duplicate(duplicate, canonical, stats)
+
+    repair = rebuild_category_tree_from_offers()
+    stats.update(repair)
+    return stats
 
 
 consolidate_global_duplicates = consolidate_sibling_duplicates
