@@ -108,3 +108,42 @@ class BotEvent(models.Model):
 
     class Meta:
         ordering = ["id"]
+
+
+class SourceCatalogJob(models.Model):
+    """Persistent manual catalog-sync queue/status shared by all containers."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (QUEUED, "در صف"),
+        (RUNNING, "در حال اجرا"),
+        (COMPLETED, "تکمیل‌شده"),
+        (FAILED, "ناموفق"),
+        (CANCELLED, "لغوشده"),
+    ]
+
+    job_id = models.CharField(max_length=32, primary_key=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=QUEUED, db_index=True)
+    state = models.JSONField(default=dict, blank=True)
+    # Every active manual job uses slot 1. The conditional unique constraint below
+    # makes duplicate starts impossible even when multiple gunicorn workers race.
+    active_slot = models.PositiveSmallIntegerField(default=1, editable=False)
+    heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["active_slot"],
+                condition=models.Q(status__in=[QUEUED, RUNNING]),
+                name="enh_one_active_source_catalog_job",
+            )
+        ]
