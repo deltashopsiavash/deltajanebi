@@ -40,7 +40,9 @@ class SourceDiscoveryV19Tests(TestCase):
         category = "<html><body><a href='/product/three/'>Three</a></body></html>"
         empty = "<html><body></body></html>"
 
-        def fake_get(url, site, deadline, accept=None):
+        def fake_get(url, site, deadline, accept=None, heartbeat=None):
+            if heartbeat:
+                heartbeat()
             if url.endswith("robots.txt"):
                 return FakeResponse(url, "Sitemap: https://bounded.example/product-sitemap.xml")
             if url.endswith("product-sitemap.xml"):
