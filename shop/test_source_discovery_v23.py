@@ -11,6 +11,7 @@ class _FakeResponse:
         self.status_code = 200
         self.url = url
         self.encoding = "utf-8"
+        self.headers = {"Content-Type": "text/html; charset=utf-8"}
         self._chunks = list(chunks)
         self._content = b""
         self.closed = False
