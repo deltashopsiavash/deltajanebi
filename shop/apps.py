@@ -6,9 +6,10 @@ class ShopConfig(AppConfig):
     name = "shop"
 
     def ready(self):
-        # Register the additive source-offer model without changing the original
-        # Product model or any of Delta's existing management flows.
+        # Register additive models without changing the original Product/Category
+        # models or Delta's existing management flows.
         from shop import source_offer_models  # noqa: F401
+        from shop import home_category_models  # noqa: F401
         from shop.services import source_sync
         from shop.services import source_terms_v29  # noqa: F401
         from shop.services.source_sanitizer_v27 import sanitize_scraped_product
