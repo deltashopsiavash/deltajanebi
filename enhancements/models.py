@@ -30,7 +30,7 @@ class ProductStory(models.Model):
     MEDIA_CHOICES = [(MEDIA_IMAGE, "عکس"), (MEDIA_VIDEO, "ویدئو")]
 
     title = models.CharField(max_length=160)
-    media = models.FileField(upload_to="stories/%Y/%m/"))
+    media = models.FileField(upload_to="stories/%Y/%m/")
     media_type = models.CharField(max_length=10, choices=MEDIA_CHOICES, default=MEDIA_IMAGE)
     target_url = models.CharField(max_length=500)
     expires_at = models.DateTimeField(db_index=True)
