@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}{{ help_page.title }} | {{ store_settings.store_name }}{% endblock %}
+{% block content %}
+<style>
+.help-page-shell{width:min(980px,calc(100% - 28px));margin:34px auto 0}.help-page-card{background:#fff;border:1px solid #e8edf2;border-radius:28px;box-shadow:0 14px 42px rgba(20,38,63,.08);overflow:hidden}.help-page-head{padding:26px 28px;background:linear-gradient(135deg,#f7fbff,#eef6ff);border-bottom:1px solid #e4edf7}.help-page-head small{display:block;color:#2784d9;font-weight:900;margin-bottom:7px}.help-page-head h1{margin:0;font-size:25px;font-weight:950;color:#17212d}.help-page-body{padding:28px;color:#3e4855;font-size:14px;line-height:2.25;white-space:normal}.help-page-empty{padding:18px;border-radius:16px;background:#fff8e8;color:#8b6415}.help-page-back{display:inline-flex;margin-top:18px;text-decoration:none;background:#147bd1;color:#fff;padding:10px 16px;border-radius:12px;font-weight:900;font-size:12px}@media(max-width:760px){.help-page-shell{margin-top:18px}.help-page-card{border-radius:21px}.help-page-head{padding:21px 18px}.help-page-head h1{font-size:20px}.help-page-body{padding:20px 18px;font-size:13px}}
+html[data-theme="dark"] .help-page-card{background:#171b22;border-color:#303741;box-shadow:none}html[data-theme="dark"] .help-page-head{background:#1d232b;border-color:#303741}html[data-theme="dark"] .help-page-head h1{color:#f2f5f8}html[data-theme="dark"] .help-page-body{color:#c8d0da}
+</style>
+<section class="help-page-shell"><article class="help-page-card"><header class="help-page-head"><small>راهنمای فروشگاه</small><h1>{{ help_page.title }}</h1></header><div class="help-page-body">{% if help_page.content %}{{ help_page.content|linebreaksbr }}{% else %}<div class="help-page-empty">متن این بخش هنوز توسط مدیریت فروشگاه ثبت نشده است.</div>{% endif %}<br><a class="help-page-back" href="/">بازگشت به صفحه اصلی</a></div></article></section>
+{% endblock %}
