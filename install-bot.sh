@@ -55,18 +55,23 @@ set -a
 . /etc/deltajanebi-bot.env
 set +a
 export PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"
-.venv/bin/python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py
+.venv/bin/python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_help_pages_v33.py delta_site_title_v34.py
 .venv/bin/python - <<'PY'
 import external_bot_delta_v16 as bot
 import external_bot_delta_v15 as router
 import delta_bot_native as delta
 import delta_footer_restore as footer
 import delta_source_restore as source
+import delta_help_pages_v33 as help_pages
+import delta_site_title_v34 as site_title
 assert callable(bot.run) and callable(router.routed_site_panel) and callable(delta.callback)
 assert callable(footer.install) and callable(source.install)
+assert callable(help_pages.install) and callable(site_title.install)
 assert getattr(delta, "_delta_footer_restore_v17_installed", False) is True
 assert getattr(delta, "_delta_source_restore_v18_installed", False) is True
-print("Delta native multi-site bot v18 source controls: OK")
+assert getattr(delta, "_delta_help_pages_v33_installed", False) is True
+assert getattr(delta, "_delta_site_title_v34_installed", False) is True
+print("Delta native multi-site bot + help pages + site title controls: OK")
 PY
 
 cat >/etc/systemd/system/deltajanebi-bot.service <<EOF
@@ -100,7 +105,7 @@ fi
 
 echo
 echo "✅ ربات خارجی DeltaJanebi نصب و Telegram تست شد."
-echo "✅ Router چندسایتی و کنترل‌های اختصاصی منبع Delta فعال هستند."
+echo "✅ Router چندسایتی، صفحات راهنما و کنترل عنوان سایت فعال هستند."
 echo "✅ اطلاعات اتصال سایت‌ها و مدیران در /var/lib/deltajanebi-bot حفظ می‌شود."
 echo "داخل تلگرام: /start → 🔗 اتصال سایت → آدرس سایت → API Key همان سایت"
 echo "وضعیت: systemctl status deltajanebi-bot --no-pager"
