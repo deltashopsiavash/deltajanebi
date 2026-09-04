@@ -1,6 +1,7 @@
 from django.urls import path
 
 from enhancements import account_views as enhanced_accounts
+from enhancements import help_views
 from enhancements.site_api_v18 import bot_api
 from . import auth_views, views, wallet_checkout
 
@@ -24,7 +25,8 @@ urlpatterns = [
     path("checkout/", wallet_checkout.checkout, name="checkout"),
     path("payment/card/<int:pk>/", wallet_checkout.card_payment, name="card_payment"),
     path("payment/zarinpal/callback/", wallet_checkout.zarinpal_callback, name="zarinpal_callback"),
-    path("terms/", views.terms, name="terms"),
+    path("terms/", help_views.terms, name="terms"),
+    path("help/<slug:slug>/", help_views.help_page, name="help_page"),
     path("account/", views.account_profile, name="account_profile"),
     path("account/orders/", views.account_orders, name="account_orders"),
     path("account/orders/<int:pk>/", views.account_order_detail, name="account_order_detail"),
