@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from enhancements.models import SourceCatalogJob
 from shop.models import SourceSite
+from shop.services import source_bulk_job_v26 as bulk
 from shop.services import source_discovery_v19 as discovery
 from shop.services import source_isolation_v26 as isolation
 from shop.services import source_job_store_v26 as jobs
@@ -60,6 +61,36 @@ class SourceJobV26Tests(TestCase):
         self.assertEqual(second["job_store"], "database")
         self.assertIsNotNone(second["heartbeat_at"])
         self.assertEqual(SourceCatalogJob.objects.get(pk=job_id).status, "running")
+
+    def test_single_source_scope_is_durable_and_selects_only_that_site(self):
+        other = SourceSite.objects.create(
+            name="Other Source",
+            base_url="https://other.example",
+            hostname="other.example",
+            is_active=True,
+            bulk_import_enabled=True,
+        )
+        job, reused = jobs.create_or_get_active_job(self.site.pk, self.site.name)
+        self.assertFalse(reused)
+        self.assertEqual(job["target_source_site_id"], self.site.pk)
+        self.assertEqual(job["target_source_site_name"], self.site.name)
+        self.assertEqual(job["sync_scope"], "single_source")
+        self.assertEqual(job["engine_version"], 27)
+
+        persisted = jobs.read_job(job["job_id"])
+        sites, target_id = bulk._selected_sites(persisted)
+        self.assertEqual(target_id, self.site.pk)
+        self.assertEqual([x.pk for x in sites], [self.site.pk])
+        self.assertNotIn(other.pk, [x.pk for x in sites])
+
+    def test_active_job_reuse_never_changes_original_scope(self):
+        first, reused = jobs.create_or_get_active_job(self.site.pk, self.site.name)
+        self.assertFalse(reused)
+        second, reused = jobs.create_or_get_active_job()
+        self.assertTrue(reused)
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertEqual(second["target_source_site_id"], self.site.pk)
+        self.assertEqual(second["sync_scope"], "single_source")
 
     def test_discovery_streams_heartbeats_and_partial_product_urls(self):
         sitemap = """<?xml version='1.0'?><urlset>
