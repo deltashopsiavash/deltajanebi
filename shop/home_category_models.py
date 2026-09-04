@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.db import models
 from django.urls import reverse
 
@@ -75,7 +77,7 @@ class HomeCategoryTile(models.Model):
     def storefront_url(self):
         if self.category_id and self.category and self.category.is_active:
             return reverse("category", args=[self.category.slug])
-        return reverse("search") + "?q=" + self.name
+        return reverse("search") + "?" + urlencode({"q": self.name})
 
     def __str__(self):
         return f"{self.order}: {self.name}"
