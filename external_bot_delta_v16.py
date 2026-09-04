@@ -54,6 +54,9 @@ delta_banner_controls_v31.install()
 import delta_help_pages_v33  # noqa: E402
 
 delta_help_pages_v33.install()
+import delta_site_title_v34  # noqa: E402
+
+delta_site_title_v34.install()
 
 
 async def cancel(update, context):
@@ -76,8 +79,7 @@ async def cancel(update, context):
     site = core.assigned_site(uid)
     if site:
         return await update.message.reply_text(
-            "❌ عملیات جاری لغو شد.",
-            reply_markup=v15.routed_site_panel(site, uid),
+            "❌ عملیات جاری لغو شد.", reply_markup=v15.routed_site_panel(site, uid)
         )
     return await update.message.reply_text("❌ عملیات جاری لغو شد.")
 
