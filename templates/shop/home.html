@@ -27,7 +27,9 @@
 </section>
 {% endif %}
 
-{% if categories %}
+{% if home_category_tiles %}
+<section class="wrap home-cat-section" data-home-category-source="{{ home_category_showcase.source_site.hostname|default:'' }}"><div class="home-cat-title"><h2>{{ home_category_showcase.title|default:'دسته‌بندی محصولات' }}</h2>{% if home_category_showcase.subtitle %}<p>{{ home_category_showcase.subtitle }}</p>{% endif %}</div><div class="home-cat-grid">{% for c in home_category_tiles %}<a class="home-cat-card" href="{{ c.storefront_url }}"><span class="home-cat-circle">{% if c.display_image %}<img src="{{ c.display_image }}" alt="{{ c.name }}" loading="lazy" decoding="async" referrerpolicy="no-referrer">{% else %}<b>{{ c.name|slice:':1' }}</b>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>
+{% elif categories %}
 <section class="wrap home-cat-section"><div class="home-cat-title"><h2>دسته‌بندی محصولات</h2><p>انتخاب سریع دسته موردنظر</p></div><div class="home-cat-grid">{% for c in categories %}<a class="home-cat-card" href="{% url 'category' c.slug %}"><span class="home-cat-circle">{% if c.image_url %}<img src="{{ c.image_url }}" alt="{{ c.name }}" loading="lazy" decoding="async">{% else %}<b>{{ c.name|slice:':1' }}</b>{% endif %}</span><span>{{ c.name }}</span></a>{% endfor %}</div></section>
 {% endif %}
 
