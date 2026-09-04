@@ -53,6 +53,19 @@ services:
       - backup_data:/app/backups
       - ./.env:/app/.env.host:ro
 
+  # Sync دستی از API فقط یک job پایدار در PostgreSQL می‌سازد. این سرویس
+  # job را claim می‌کند و پردازش اصلی/محصول/کشف را خارج از gunicorn اجرا می‌کند.
+  syncjobs:
+    image: deltajanebi-app:latest
+    restart: unless-stopped
+    command: ["python", "manage.py", "source_sync_supervisor"]
+    env_file: .env
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - media_data:/app/media
+
   sync:
     image: deltajanebi-app:latest
     restart: unless-stopped
