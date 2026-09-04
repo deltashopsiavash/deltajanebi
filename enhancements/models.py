@@ -30,7 +30,7 @@ class ProductStory(models.Model):
     MEDIA_CHOICES = [(MEDIA_IMAGE, "عکس"), (MEDIA_VIDEO, "ویدئو")]
 
     title = models.CharField(max_length=160)
-    media = models.FileField(upload_to="stories/%Y/%m/")
+    media = models.FileField(upload_to="stories/%Y/%m/"))
     media_type = models.CharField(max_length=10, choices=MEDIA_CHOICES, default=MEDIA_IMAGE)
     target_url = models.CharField(max_length=500)
     expires_at = models.DateTimeField(db_index=True)
@@ -129,8 +129,6 @@ class SourceCatalogJob(models.Model):
     job_id = models.CharField(max_length=32, primary_key=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=QUEUED, db_index=True)
     state = models.JSONField(default=dict, blank=True)
-    # Every active manual job uses slot 1. The conditional unique constraint below
-    # makes duplicate starts impossible even when multiple gunicorn workers race.
     active_slot = models.PositiveSmallIntegerField(default=1, editable=False)
     heartbeat_at = models.DateTimeField(null=True, blank=True, db_index=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -143,7 +141,7 @@ class SourceCatalogJob(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["active_slot"],
-                condition=models.Q(status__in=[QUEUED, RUNNING]),
+                condition=models.Q(status__in=["queued", "running"]),
                 name="enh_one_active_source_catalog_job",
             )
         ]
