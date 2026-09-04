@@ -88,6 +88,11 @@ class EmailVerificationCode(models.Model):
 class AddonSetting(models.Model):
     backup_interval_minutes = models.PositiveIntegerField(default=0)
     last_backup_at = models.DateTimeField(null=True, blank=True)
+    site_title_override = models.CharField(
+        max_length=240,
+        blank=True,
+        help_text="عنوان موقت/اختصاصی تگ title؛ خالی باشد از نام فروشگاه استفاده می‌شود.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     @classmethod
