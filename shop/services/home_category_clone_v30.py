@@ -1,9 +1,9 @@
-"""Clone only a registered source site's homepage category showcase.
+"""Clone only the explicit «دسته‌بندی محصولات» block from a source homepage.
 
-This feature is deliberately isolated from ``shop.Category``. It copies the
-visible homepage category cards (title/image/order/link metadata) into separate
-showcase rows, so the hamburger/menu category tree is never created, moved,
-renamed or deleted by this operation.
+The scraper is intentionally strict: it must first find the product-categories
+heading and then reads cards only from the smallest surrounding block that
+contains that heading. Other homepage widgets/collections/promos are ignored.
+The hamburger/menu Category tree is never modified by this feature.
 """
 import re
 import time
@@ -26,18 +26,14 @@ _TRANSLATION = str.maketrans({
     "ؤ": "و", "إ": "ا", "أ": "ا",
 })
 
-_PRIORITY_TILE_SELECTORS = (
-    "main .elementor-widget-wd_product_categories .category-grid-item",
-    "main .elementor-widget-woocommerce-product-categories .product-category",
-    "main .wd-categories .category-grid-item",
-    "main .wd-categories .wd-cat",
-    "main .category-grid-item",
-    "main li.product-category",
-    "main .product-category",
-    ".main-page-wrapper .category-grid-item",
-    ".site-content .category-grid-item",
-    "[role='main'] .category-grid-item",
-    "[role='main'] .product-category",
+_TILE_SELECTORS = (
+    ".elementor-widget-wd_product_categories .category-grid-item",
+    ".elementor-widget-woocommerce-product-categories .product-category",
+    ".wd-categories .category-grid-item",
+    ".wd-categories .wd-cat",
+    ".category-grid-item",
+    "li.product-category",
+    ".product-category",
 )
 _TITLE_SELECTORS = (
     ".woocommerce-loop-category__title",
@@ -59,6 +55,12 @@ _BAD_NAMES = {
     "خانه", "صفحه اصلی", "فروشگاه", "محصولات", "همه محصولات", "مشاهده همه",
     "home", "shop", "products", "view all", "all products",
 }
+_PRODUCT_CATEGORY_HEADING_KEYS = (
+    "دستهبندیمحصولات",
+    "دستهبندیهایمحصولات",
+    "productcategories",
+    "productcategory",
+)
 
 
 def _norm(value):
@@ -74,7 +76,6 @@ def _key(value):
 
 def _clean_name(value):
     text = _norm(value)
-    # WooCommerce often appends product count as a separate parenthesized token.
     text = re.sub(r"\s*\(\s*[۰-۹٠-٩0-9,.]+\s*\)\s*$", "", text).strip()
     if not text or len(text) > 160 or text.casefold() in _BAD_NAMES:
         return ""
@@ -170,65 +171,100 @@ def _tile_from_node(node, base_url, site, strict=False):
     }
 
 
-def _extract_heading(soup, first_name):
+def _is_product_categories_heading(value):
+    marker = _key(value)
+    return bool(marker and any(marker.startswith(prefix) for prefix in _PRODUCT_CATEGORY_HEADING_KEYS))
+
+
+def _candidate_count(node):
+    """Cheap estimate used only to choose the smallest heading-owned block."""
+    seen = set()
+    for selector in _TILE_SELECTORS:
+        for item in node.select(selector):
+            seen.add(id(item))
+    if len(seen) >= 2:
+        return len(seen)
+    category_links = 0
+    for anchor in node.select("a[href]"):
+        if _looks_category_url(anchor.get("href")):
+            category_links += 1
+    return max(len(seen), category_links)
+
+
+def _product_categories_scope(soup):
+    """Return only the DOM block owned by the «دسته‌بندی محصولات» heading.
+
+    We deliberately do not fall back to scanning the entire homepage. If the
+    named section cannot be isolated, cloning fails and the previous layout is
+    kept rather than importing unrelated homepage cards.
+    """
     main = soup.select_one("main, .main-page-wrapper, .site-content, [role='main']") or soup
-    for heading in main.select("h1,h2,h3")[:60]:
-        text = _clean_name(heading.get_text(" ", strip=True))
-        if not text or _key(text) == _key(first_name):
-            continue
-        low = text.casefold()
-        if "دسته" in low or "category" in low or "محصول" in low:
-            subtitle = ""
-            parent = heading.parent
-            if parent:
-                for p in parent.select("p")[:4]:
-                    candidate = _norm(p.get_text(" ", strip=True))
-                    if candidate and candidate != text and len(candidate) <= 240:
-                        subtitle = candidate
-                        break
-            return text[:160], subtitle[:240]
-    return "دسته‌بندی محصولات", ""
+    headings = []
+    for heading in main.select("h1,h2,h3,h4,h5,h6"):
+        if _is_product_categories_heading(heading.get_text(" ", strip=True)):
+            headings.append(heading)
+    if not headings:
+        return None
+
+    for heading in headings:
+        current = heading.parent
+        best = None
+        for _ in range(7):
+            if current is None or current is main.parent:
+                break
+            count = _candidate_count(current)
+            if count >= 2:
+                best = current
+                break
+            if current is main:
+                break
+            current = current.parent
+        if best is not None:
+            return best
+    return None
 
 
 def extract_homepage_categories(html, base_url, site):
-    """Extract visible homepage category cards in source DOM order."""
+    """Extract cards only from the explicit product-category section."""
     soup = BeautifulSoup(str(html or ""), "lxml")
     for node in soup.select("header,nav,footer,aside,.mobile-nav,.mobile-menu,.wd-header-nav,.menu,.offcanvas-sidebar"):
         node.decompose()
 
+    scope = _product_categories_scope(soup)
+    if scope is None:
+        return {"title": "", "subtitle": "", "tiles": []}
+
     rows = []
-    seen = set()
+    seen_names = set()
 
     def add(tile):
         if not tile:
             return
-        marker = (_key(tile["name"]), tile["source_category_url"].split("#", 1)[0].rstrip("/"))
-        name_marker = marker[0]
-        if not name_marker or any(existing[0] == name_marker for existing in seen):
+        name_marker = _key(tile["name"])
+        if not name_marker or name_marker in seen_names:
             return
-        seen.add(marker)
+        seen_names.add(name_marker)
         rows.append(tile)
 
-    for selector in _PRIORITY_TILE_SELECTORS:
-        found = soup.select(selector)
+    for selector in _TILE_SELECTORS:
+        found = scope.select(selector)
         if not found:
             continue
         for node in found:
             add(_tile_from_node(node, base_url, site, strict=True))
             if len(rows) >= MAX_TILES:
                 break
-        if len(rows) >= 3:
+        if len(rows) >= 2:
             break
 
-    if len(rows) < 3:
-        main = soup.select_one("main, .main-page-wrapper, .site-content, [role='main']") or soup
-        for anchor in main.select("a[href]"):
+    if len(rows) < 2:
+        for anchor in scope.select("a[href]"):
             href = urljoin(base_url, str(anchor.get("href") or "").strip())
             if not _looks_category_url(href):
                 continue
             parent = anchor
             for _ in range(3):
-                if not parent.parent:
+                if not parent.parent or parent.parent is scope.parent:
                     break
                 candidate = parent.parent
                 classes = " ".join(candidate.get("class") or []).casefold()
@@ -243,8 +279,9 @@ def extract_homepage_categories(html, base_url, site):
     if not rows:
         return {"title": "", "subtitle": "", "tiles": []}
 
-    title, subtitle = _extract_heading(soup, rows[0]["name"])
-    return {"title": title, "subtitle": subtitle, "tiles": rows[:MAX_TILES]}
+    # Do not import arbitrary source headings/subtitles/promotional copy. Only
+    # the category cards themselves are cloned, under Delta's fixed section title.
+    return {"title": "دسته‌بندی محصولات", "subtitle": "", "tiles": rows[:MAX_TILES]}
 
 
 def _category_lookup():
@@ -270,15 +307,15 @@ def clone_homepage_categories(source_site_id):
     result = extract_homepage_categories(response.text, response.url or site.base_url, site)
     rows = result["tiles"]
     if not rows:
-        raise ValueError("در صفحه اصلی این سایت دسته‌بندی قابل کپی پیدا نشد؛ چیدمان قبلی دست‌نخورده ماند.")
+        raise ValueError("بخش «دسته‌بندی محصولات» در صفحه اصلی این سایت پیدا نشد؛ چیدمان قبلی دست‌نخورده ماند.")
 
     categories = _category_lookup()
     matched = 0
     with transaction.atomic():
         showcase = HomeCategoryShowcase.load()
         showcase.source_site = site
-        showcase.title = (result.get("title") or "دسته‌بندی محصولات")[:160]
-        showcase.subtitle = (result.get("subtitle") or "")[:240]
+        showcase.title = "دسته‌بندی محصولات"
+        showcase.subtitle = ""
         showcase.source_url = (response.url or site.base_url)[:4096]
         showcase.enabled = True
         showcase.last_synced_at = timezone.now()
@@ -306,12 +343,13 @@ def clone_homepage_categories(source_site_id):
         "source_site_id": site.id,
         "source_site_name": site.name,
         "title": showcase.title,
-        "subtitle": showcase.subtitle,
+        "subtitle": "",
         "count": len(rows),
         "matched_categories": matched,
         "unmatched_categories": len(rows) - matched,
         "items": [row["name"] for row in rows],
         "menu_untouched": True,
+        "section_only": True,
     }
 
 
@@ -338,7 +376,8 @@ def homepage_category_status():
         "source_site_id": showcase.source_site_id,
         "source_site_name": showcase.source_site.name if showcase.source_site_id else "",
         "title": showcase.title,
-        "subtitle": showcase.subtitle,
+        "subtitle": "",
         "last_synced_at": showcase.last_synced_at.isoformat() if showcase.last_synced_at else None,
         "menu_untouched": True,
+        "section_only": True,
     }
