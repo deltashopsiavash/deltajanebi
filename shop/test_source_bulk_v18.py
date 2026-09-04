@@ -1,11 +1,11 @@
 import json
 import os
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from django.test import Client, TestCase
 
+from enhancements.models import SourceCatalogJob
 from shop.models import SourceSite
 from shop.services import source_bulk_job
 from shop.services.source_catalog import discover_product_urls
@@ -87,41 +87,47 @@ class SourceCatalogV18Tests(TestCase):
         self.assertEqual(product.category.name, "Type-C")
         self.assertIn("قیمت منبع", product.sync_error)
 
-    def test_background_sync_api_returns_immediately_and_status_is_pollable(self):
+    def test_background_sync_api_is_durable_and_duplicate_start_reattaches(self):
         env = patch.dict(os.environ, {"DELTAJANEBI_BOT_API_KEY": self.API_KEY})
         env.start()
         self.addCleanup(env.stop)
         client = Client()
+        SourceCatalogJob.objects.all().delete()
 
-        with tempfile.TemporaryDirectory() as tmp:
-            old_dir, old_lock = source_bulk_job.JOB_DIR, source_bulk_job.LOCK_FILE
-            source_bulk_job.JOB_DIR = Path(tmp)
-            source_bulk_job.LOCK_FILE = Path(tmp) / "active.lock"
-            self.addCleanup(setattr, source_bulk_job, "JOB_DIR", old_dir)
-            self.addCleanup(setattr, source_bulk_job, "LOCK_FILE", old_lock)
+        response = client.post(
+            "/api/bot/v1/",
+            data=json.dumps({"action": "delta_source_sync_start", "payload": {}}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        data = response.json()["data"]
+        self.assertEqual(data["status"], "queued")
+        self.assertTrue(data["job_id"])
+        self.assertFalse(data["reused"])
+        self.assertEqual(data["job_store"], "database")
 
-            process = MagicMock()
-            with patch("enhancements.site_api_v16.subprocess.Popen", return_value=process) as popen:
-                response = client.post(
-                    "/api/bot/v1/",
-                    data=json.dumps({"action": "delta_source_sync_start", "payload": {}}),
-                    content_type="application/json",
-                    HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
-                )
-            self.assertEqual(response.status_code, 200, response.content)
-            data = response.json()["data"]
-            self.assertEqual(data["status"], "queued")
-            self.assertTrue(data["job_id"])
-            popen.assert_called_once()
+        duplicate = client.post(
+            "/api/bot/v1/",
+            data=json.dumps({"action": "delta_source_sync_start", "payload": {}}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
+        )
+        self.assertEqual(duplicate.status_code, 200, duplicate.content)
+        second = duplicate.json()["data"]
+        self.assertEqual(second["job_id"], data["job_id"])
+        self.assertTrue(second["reused"])
+        self.assertEqual(SourceCatalogJob.objects.filter(status="queued").count(), 1)
 
-            status = client.post(
-                "/api/bot/v1/",
-                data=json.dumps({"action": "delta_source_sync_status", "payload": {"job_id": data["job_id"]}}),
-                content_type="application/json",
-                HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
-            )
-            self.assertEqual(status.status_code, 200, status.content)
-            self.assertEqual(status.json()["data"]["status"], "queued")
+        status = client.post(
+            "/api/bot/v1/",
+            data=json.dumps({"action": "delta_source_sync_status", "payload": {"job_id": data["job_id"]}}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {self.API_KEY}",
+        )
+        self.assertEqual(status.status_code, 200, status.content)
+        self.assertEqual(status.json()["data"]["status"], "queued")
+        self.assertEqual(status.json()["data"]["job_store"], "database")
 
     def test_home_categories_are_compact_circles(self):
         template = Path("templates/shop/home.html").read_text(encoding="utf-8")
