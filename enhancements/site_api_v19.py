@@ -9,6 +9,14 @@ from .site_api import _authorized, _json, _not_found
 from .site_api_v18 import bot_api as v18_bot_api
 
 
+def _sync_legacy_terms(value):
+    ensure_default_help_pages()
+    item = HelpPage.objects.filter(slug="rules").first()
+    if item is not None:
+        item.content = str(value or "").strip()[:50000]
+        item.save(update_fields=["content", "updated_at"])
+
+
 @csrf_exempt
 def bot_api(request):
     if request.method != "POST":
@@ -19,6 +27,18 @@ def bot_api(request):
     data = _json(request)
     action = str(data.get("action") or "")
     payload = data.get("payload") or {}
+
+    # Old Telegram messages can still contain the former direct rules edit button.
+    # Keep that path compatible instead of allowing SiteSetting.terms_text and the
+    # new HelpPage-backed rules page to diverge.
+    if action in {"delta_commerce_update", "settings_update"} and "terms_text" in payload:
+        response = v18_bot_api(request)
+        if response.status_code < 400:
+            try:
+                _sync_legacy_terms(payload.get("terms_text"))
+            except Exception:
+                pass
+        return response
 
     if not action.startswith("delta_help_page"):
         return v18_bot_api(request)
