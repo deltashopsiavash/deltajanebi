@@ -1,0 +1,13 @@
+<section class="footer-help-area" aria-label="راهنمای فروشگاه">
+  <details class="footer-help-menu">
+    <summary><span class="footer-help-summary-icon">?</span><span><b>راهنما</b><small>قوانین، بازگشت کالا و راهنمای خرید</small></span><i>⌄</i></summary>
+    <div class="footer-help-links">
+      {% for page in help_pages %}
+        {% if page.slug == 'rules' %}<a href="{% url 'terms' %}">{% else %}<a href="{% url 'help_page' page.slug %}">{% endif %}
+          <span class="footer-help-link-icon">{% if page.slug == 'rules' %}⚖{% elif page.slug == 'returns' %}↩{% elif page.slug == 'buying-guide' %}🛍{% else %}•{% endif %}</span>
+          <span><b>{{ page.title }}</b><small>مشاهده توضیحات کامل</small></span><i>‹</i>
+        </a>
+      {% endfor %}
+    </div>
+  </details>
+</section>
