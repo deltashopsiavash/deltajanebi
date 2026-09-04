@@ -96,3 +96,10 @@ class HelpPagesV33Tests(TestCase):
         protected = self.api("delta_help_page_delete", {"id": rules["id"]})
         self.assertEqual(protected.status_code, 409)
         self.assertTrue(HelpPage.objects.filter(pk=rules["id"]).exists())
+
+    def test_legacy_commerce_terms_edit_also_updates_rules_page(self):
+        self.api("delta_help_pages")
+        response = self.api("delta_commerce_update", {"terms_text": "قوانین از پیام قدیمی ربات"})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(SiteSetting.load().terms_text, "قوانین از پیام قدیمی ربات")
+        self.assertEqual(HelpPage.objects.get(slug="rules").content, "قوانین از پیام قدیمی ربات")
