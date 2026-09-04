@@ -48,6 +48,9 @@ delta_sync_progress_v22.install()
 import delta_catalog_ui_v20  # noqa: E402
 
 delta_catalog_ui_v20.install()
+import delta_banner_controls_v31  # noqa: E402
+
+delta_banner_controls_v31.install()
 
 
 async def cancel(update, context):
