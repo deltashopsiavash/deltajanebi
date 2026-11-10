@@ -52,7 +52,7 @@ if [[ -z "$API_KEY" ]]; then
   chmod 600 /root/deltajanebi-bot-api-key.txt
   docker compose up -d --force-recreate web syncjobs sync reservations
 fi
-docker compose exec -T web sh -lc 'curl -fsS --max-time 15 -X POST -H "Host: $DOMAIN" -H "Content-Type: application/json" -H "Authorization: Bearer $DELTAJANEBI_BOT_API_KEY" --data '\''{"action":"ping","payload":{}}'\'' http://127.0.0.1:8000/api/bot/v1/ | grep -q '\''"ok": true\|"ok":true'\'''
+docker compose exec -T web python scripts/check_bot_api.py
 
 for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || { echo "❌ $svc پیدا نشد."; exit 1; }; [[ "$(docker inspect -f '{{.State.Running}}' "$cid")" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; exit 1; }; done
 

@@ -142,7 +142,7 @@ docker compose exec -T web python manage.py shell -c 'import os; from shop.model
 docker compose exec -T web python manage.py check --fail-level ERROR
 
 log "تست API اختصاصی DeltaJanebi"
-docker compose exec -T web sh -lc 'curl -fsS --max-time 15 -X POST -H "Host: $DOMAIN" -H "Content-Type: application/json" -H "Authorization: Bearer $DELTAJANEBI_BOT_API_KEY" --data '\''{"action":"ping","payload":{}}'\'' http://127.0.0.1:8000/api/bot/v1/ | grep -q '\''"ok": true\|"ok":true'\'''
+docker compose exec -T web python scripts/check_bot_api.py
 
 for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || fail "سرویس $svc ساخته نشد."; running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"; [[ "$running" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; fail "سرویس $svc در حال اجرا نیست."; }; done
 
