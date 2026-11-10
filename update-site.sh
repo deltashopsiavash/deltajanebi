@@ -25,7 +25,7 @@ bash scripts/build-site-image.sh
 
 echo "==> راه‌اندازی و recreate سرویس‌ها"
 docker compose up -d db
-docker compose up -d --force-recreate web syncjobs sync reservations caddy
+docker compose up -d --force-recreate web
 
 WEB_ID="$(docker compose ps -q --all web)"
 [[ -n "$WEB_ID" ]] || { echo "❌ web ساخته نشد."; exit 1; }
@@ -53,6 +53,14 @@ if [[ -z "$API_KEY" ]]; then
   docker compose up -d --force-recreate web syncjobs sync reservations
 fi
 docker compose exec -T web python scripts/check_bot_api.py
+docker compose exec -T web python scripts/check_site.py
+
+echo "==> Starting Caddy and background workers"
+docker compose up -d --force-recreate syncjobs sync reservations caddy
+if ! bash scripts/verify-deployment.sh; then
+  bash scripts/site-diagnostics.sh >&2 || true
+  exit 1
+fi
 
 for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || { echo "❌ $svc پیدا نشد."; exit 1; }; [[ "$(docker inspect -f '{{.State.Running}}' "$cid")" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; exit 1; }; done
 
@@ -63,8 +71,7 @@ docker compose logs --tail=40 syncjobs | grep -q 'catalog supervisor v26 is read
   exit 1
 }
 
-docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-docker compose restart caddy
+# Caddy was already validated and tested by verify-deployment.sh.
 docker image prune -f >/dev/null 2>&1 || true
 
 echo "✅ سایت DeltaJanebi با موفقیت آپدیت شد. دیتابیس، media و .env حفظ شدند."

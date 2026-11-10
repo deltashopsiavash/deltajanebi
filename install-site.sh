@@ -8,7 +8,19 @@ export DEBIAN_FRONTEND=noninteractive
 
 log(){ printf '\n==> %s\n' "$*"; }
 fail(){ printf '\n❌ %s\n' "$*" >&2; exit 1; }
-trap 'printf "\n❌ نصب در خط %s متوقف شد.\n" "$LINENO" >&2' ERR
+on_install_error() {
+  local code="$?" line="${1:-unknown}"
+  trap - ERR
+  printf '\n❌ نصب در خط %s متوقف شد (exit=%s).\n' "$line" "$code" >&2
+  if [[ -r "$APP_DIR/scripts/site-diagnostics.sh" ]]; then
+    bash "$APP_DIR/scripts/site-diagnostics.sh" >&2 || true
+  fi
+  if [[ -s /root/deltajanebi-bot-api-key.txt ]]; then
+    printf '🔐 کلید ربات از قبل ذخیره شده: sudo cat /root/deltajanebi-bot-api-key.txt\n' >&2
+  fi
+  exit "$code"
+}
+trap 'on_install_error "$LINENO"' ERR
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "این دستور باید با sudo/root اجرا شود."
 [[ -r "$TTY" ]] || fail "ترمینال تعاملی پیدا نشد. دستور را داخل SSH/Terminal اجرا کن."
@@ -126,6 +138,9 @@ fi
 chmod 600 .env
 printf '%s\n' "$API_KEY" >/root/deltajanebi-bot-api-key.txt
 chmod 600 /root/deltajanebi-bot-api-key.txt
+# The key must be handed to the operator even if build/SSL fails later.
+printf '\n🔐 کلید اتصال ربات (فقط این ترمینال): %s\n' "$API_KEY" >"$TTY"
+printf '🔐 نسخه محفوظ کلید: /root/deltajanebi-bot-api-key.txt\n' >"$TTY"
 
 log "اعتبارسنجی Compose و ساخت کامل image"
 docker compose config -q
@@ -133,7 +148,9 @@ bash scripts/build-site-image.sh
 
 log "راه‌اندازی دیتابیس، سایت، supervisor Sync دستی، Sync خودکار، رزرو و Caddy"
 docker compose up -d db
-docker compose up -d --force-recreate web syncjobs sync reservations caddy
+# Start the website on its own. If migrations/web fail, do not hide the error
+# behind Caddy or background service startup.
+docker compose up -d --force-recreate web
 
 WEB_ID="$(docker compose ps -q --all web)"; [[ -n "$WEB_ID" ]] || fail "کانتینر web ساخته نشد."
 healthy=0
@@ -151,8 +168,13 @@ docker compose exec -T web python manage.py collectstatic --noinput
 docker compose exec -T web python manage.py shell -c 'import os; from shop.models import SiteSetting; s=SiteSetting.load(); name=os.getenv("STORE_NAME","").strip(); phone=os.getenv("STORE_PHONE","").strip(); card=os.getenv("STORE_CARD_NUMBER","").strip(); owner=os.getenv("STORE_CARD_OWNER","").strip(); fields=[]; [(setattr(s,f,v),fields.append(f)) for f,v in (("store_name",name),("phone",phone),("card_number",card),("card_owner",owner)) if v]; s.save(update_fields=fields) if fields else None; print("store bootstrap: OK")'
 docker compose exec -T web python manage.py check --fail-level ERROR
 
-log "تست API اختصاصی DeltaJanebi"
+log "تست API اختصاصی DeltaJanebi و صفحه اصلی"
 docker compose exec -T web python scripts/check_bot_api.py
+docker compose exec -T web python scripts/check_site.py
+
+log "راه‌اندازی Caddy و سرویس‌های پس‌زمینه"
+docker compose up -d --force-recreate syncjobs sync reservations caddy
+bash scripts/verify-deployment.sh
 
 for svc in db web syncjobs sync reservations caddy; do cid="$(docker compose ps -q --all "$svc")"; [[ -n "$cid" ]] || fail "سرویس $svc ساخته نشد."; running="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"; [[ "$running" == true ]] || { docker compose logs --tail=120 "$svc" >&2 || true; fail "سرویس $svc در حال اجرا نیست."; }; done
 
@@ -166,7 +188,7 @@ EOF
 chmod 755 /usr/local/bin/deltajanebi-update
 
 DOMAIN_NOW="$(grep '^DOMAIN=' .env | cut -d= -f2-)"
-printf '\n✅ نصب سایت DeltaJanebi کامل شد.\n'
+printf '\n✅ نصب سایت DeltaJanebi و تست HTTPS محلی کامل شد.\n'
 printf '🌐 سایت: https://%s\n' "$DOMAIN_NOW"
 printf '🔐 کلید اتصال ربات در این فایل امن ذخیره شد: /root/deltajanebi-bot-api-key.txt\n'
 printf 'برای دیدن کلید فقط روی خود سرور: sudo cat /root/deltajanebi-bot-api-key.txt\n'
