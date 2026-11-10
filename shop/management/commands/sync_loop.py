@@ -114,13 +114,7 @@ class Command(BaseCommand):
                     f"📋 بخش {index}/{len(chunks)}\n\n"
                     f"{chunk}"
                 )
-        else:
-            notify_admins(
-                f"✅ همگام‌سازی خودکار انجام شد\n"
-                f"🕒 {now} به وقت ایران\n"
-                f"📦 بررسی‌شده: {checked:,}\n"
-                "تغییری در محصولات پیدا نشد."
-            )
+        # Silence successful, unchanged cycles. Actual errors still alert admins.
 
         if errors:
             notify_admins(

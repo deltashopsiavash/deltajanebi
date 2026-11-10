@@ -1,11 +1,13 @@
 import os
 import time
 from decimal import Decimal
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
 from shop.models import Product, SourceSite
 from shop.source_offer_models import ProductSourceOffer
+from shop.source_registry import canonical_hostname
 from shop.services import source_catalog as legacy
 from shop.services import source_sync
 from shop.services.category_v22 import canonical_path, enhanced_category_names, sync_category_path
@@ -95,11 +97,20 @@ def _legacy_product(site, url, data):
         return product
     source_code = str(data.get("sku") or "").strip()
     if source_code:
-        return Product.objects.filter(
+        candidates = Product.objects.filter(
             source_type=Product.SYNCED,
             source_product_code=source_code,
-            source_url__icontains=site.hostname,
-        ).first()
+        ).exclude(source_url="").order_by("id")
+        for candidate in candidates:
+            try:
+                parsed = urlparse(candidate.source_url)
+                if (
+                    parsed.scheme in {"http", "https"}
+                    and canonical_hostname(parsed.hostname) == canonical_hostname(site.hostname)
+                ):
+                    return candidate
+            except (TypeError, ValueError):
+                continue
     return None
 
 

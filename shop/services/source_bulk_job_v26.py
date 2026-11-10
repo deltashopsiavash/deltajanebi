@@ -6,11 +6,13 @@ pre/final cleanup pass, and explicit all-sources or single-source scope.
 """
 import os
 import time
+from urllib.parse import urlparse
 
 from django.utils import timezone
 
 from shop.models import Product, SourceSite
 from shop.source_offer_models import ProductSourceOffer
+from shop.source_registry import canonical_hostname
 from shop.services import category_v22
 from shop.services import source_identity_v21 as legacy_identity
 from shop.services import source_identity_v22 as identity
@@ -44,19 +46,39 @@ def _save(job_id, state, **updates):
     return write_job(job_id, state)
 
 
+def _belongs_to_source(url, site):
+    """Match the actual hostname (with optional www), not domain substrings."""
+    try:
+        parsed = urlparse(str(url or ""))
+        return (
+            parsed.scheme.lower() in {"http", "https"}
+            and bool(parsed.hostname)
+            and canonical_hostname(parsed.hostname) == canonical_hostname(site.hostname)
+        )
+    except ValueError:
+        return False
+
+
 def _existing_urls(site):
-    urls = list(
-        ProductSourceOffer.objects.filter(source_site=site)
+    # Historical offers can have wrong URLs even though their FK matches.
+    urls = [
+        url for url in ProductSourceOffer.objects.filter(source_site=site)
+        .exclude(source_url="")
+        .order_by("id")
+        .values_list("source_url", flat=True)
+        if _belongs_to_source(url, site)
+    ]
+    # Use icontains only to narrow SQL candidates; validate each parsed hostname.
+    # A string substring also matches source.example.evil and URL query values.
+    legacy_urls = (
+        Product.objects.filter(
+            source_type=Product.SYNCED, source_url__icontains=site.hostname
+        )
         .exclude(source_url="")
         .order_by("id")
         .values_list("source_url", flat=True)
     )
-    urls.extend(
-        Product.objects.filter(source_type=Product.SYNCED, source_url__icontains=site.hostname)
-        .exclude(source_url="")
-        .order_by("id")
-        .values_list("source_url", flat=True)
-    )
+    urls.extend(url for url in legacy_urls if _belongs_to_source(url, site))
     return list(dict.fromkeys(str(value) for value in urls if value))
 
 

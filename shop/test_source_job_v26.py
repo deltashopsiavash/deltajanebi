@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from enhancements.models import SourceCatalogJob
-from shop.models import SourceSite
+from shop.models import Product, SourceSite
+from shop.management.commands import sync_loop
+from shop.services import source_catalog_v22 as catalog
 from shop.services import source_bulk_job_v26 as bulk
 from shop.services import source_discovery_v19 as discovery
 from shop.services import source_isolation_v26 as isolation
@@ -153,3 +155,54 @@ class SourceJobV26Tests(TestCase):
         killer.assert_called_once_with(fake_process)
         self.assertEqual(result["errors"], 1)
         self.assertIn("product_hard_timeout", result["warning"])
+
+    def test_legacy_source_urls_are_isolated_by_exact_hostname(self):
+        Product.objects.create(
+            name="Same site", source_type=Product.SYNCED,
+            source_url="https://source.example/product/1/", source_product_code="source-1",
+        )
+        Product.objects.create(
+            name="WWW same site", source_type=Product.SYNCED,
+            source_url="https://www.source.example/product/2/", source_product_code="source-2",
+        )
+        Product.objects.create(
+            name="Subdomain is different", source_type=Product.SYNCED,
+            source_url="https://shop.source.example/product/3/", source_product_code="other-3",
+        )
+        Product.objects.create(
+            name="Hostname spoof", source_type=Product.SYNCED,
+            source_url="https://source.example.evil.invalid/product/4/", source_product_code="other-4",
+        )
+        Product.objects.create(
+            name="Query spoof", source_type=Product.SYNCED,
+            source_url="https://another.example/product/5/?ref=source.example", source_product_code="other-5",
+        )
+        urls = bulk._existing_urls(self.site)
+        self.assertEqual(urls, [
+            "https://source.example/product/1/",
+            "https://www.source.example/product/2/",
+        ])
+
+    def test_legacy_sku_lookup_cannot_select_another_source(self):
+        wrong = Product.objects.create(
+            name="Wrong site", source_type=Product.SYNCED,
+            source_url="https://source.example.evil.invalid/p/1",
+            source_product_code="SHARED-SKU",
+        )
+        correct = Product.objects.create(
+            name="Correct site", source_type=Product.SYNCED,
+            source_url="https://www.source.example/p/2",
+            source_product_code="SHARED-SKU",
+        )
+        found = catalog._legacy_product(self.site, "https://source.example/p/missing", {"sku": "SHARED-SKU"})
+        self.assertEqual(found.pk, correct.pk)
+        self.assertNotEqual(found.pk, wrong.pk)
+
+    def test_auto_sync_without_changes_sends_no_telegram_notification(self):
+        with patch("shop.management.commands.sync_loop._catalog_urls_bounded", return_value=([], False)), patch(
+            "shop.management.commands.sync_loop.has_pending_manual_job", return_value=False
+        ), patch("shop.management.commands.sync_loop.notify_admins") as notify:
+            yielded = sync_loop.Command()._run_cycle()
+
+        self.assertFalse(yielded)
+        notify.assert_not_called()
