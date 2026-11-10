@@ -163,3 +163,67 @@ jobs:
           grep -q 'deltashopsiavash/deltajanebi.git' update-bot.sh
           grep -q 'deltashopsiavash/sanashop.git' install-bot.sh
           grep -q 'deltashopsiavash/sanashop.git' update-bot.sh
+
+  docker-deployment:
+    name: Real Docker deployment smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare test environment
+        run: |
+          cat > .env <<'EOF'
+          DOMAIN=localhost
+          ACME_EMAIL=ci@example.invalid
+          DJANGO_SECRET_KEY=ci-docker-setup-long-secret-not-for-production
+          DEBUG=0
+          ALLOWED_HOSTS=localhost,127.0.0.1
+          POSTGRES_DB=deltajanebi
+          POSTGRES_USER=deltajanebi
+          POSTGRES_PASSWORD=ci-local-db-password
+          DATABASE_URL=postgresql://deltajanebi:ci-local-db-password@db:5432/deltajanebi
+          DELTAJANEBI_BOT_API_KEY=ci-local-bot-key-for-docker-test
+          STORE_NAME=DeltaJanebi
+          DEFAULT_FROM_EMAIL=support@example.invalid
+          SOURCE_SYNC_INTERVAL=3600
+          EOF
+          docker compose config -q
+
+      - name: Build production app with offline wheel installation
+        env:
+          DELTA_PIP_INDEXES: https://pypi.org/simple/
+        run: bash scripts/build-site-image.sh
+
+      - name: Bring up PostgreSQL and Django separately
+        run: |
+          docker compose up -d db
+          docker compose up -d web
+          healthy=0
+          for attempt in $(seq 1 60); do
+            cid=$(docker compose ps -q web)
+            if [[ -n "$cid" ]]; then
+              status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
+              if [[ "$status" == healthy ]]; then healthy=1; break; fi
+              if [[ "$status" == unhealthy || "$status" == exited ]]; then break; fi
+            fi
+            sleep 3
+          done
+          [[ "$healthy" == 1 ]] || { docker compose logs --tail=100 db web; exit 1; }
+
+      - name: Start Caddy and workers; exercise internal API and public HTTPS route
+        run: |
+          docker compose up -d syncjobs sync reservations caddy
+          docker compose exec -T web python scripts/check_bot_api.py
+          docker compose exec -T web python scripts/check_site.py
+          bash scripts/verify-deployment.sh
+          curl -kfsS --noproxy '*' --resolve localhost:443:127.0.0.1 https://localhost/ -o /dev/null
+
+      - name: Diagnostic logs after failed smoke test
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --tail=100 db web caddy syncjobs sync reservations || true
+
+      - name: Stop test containers
+        if: always()
+        run: docker compose down -v || true
