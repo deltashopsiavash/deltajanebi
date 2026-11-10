@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Safely continue an interrupted site install without removing any volumes or credentials.
 set -Eeuo pipefail
-APP_DIR="/opt/deltajanebi"
+APP_DIR="${DELTAJANEBI_APP_DIR:-/opt/deltajanebi}"
+# The server uses /opt/deltajanebi. CI and manual checkouts can run in-place.
+if [[ ! -d "$APP_DIR" && -f "./docker-compose.yml" ]]; then
+  APP_DIR="$PWD"
+fi
 cd "$APP_DIR" || { echo "ERROR: Missing $APP_DIR" >&2; exit 1; }
 
 on_error() {
