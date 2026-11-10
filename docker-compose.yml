@@ -18,6 +18,8 @@ services:
     image: deltajanebi-app:latest
     build:
       context: .
+      additional_contexts:
+        wheelhouse: ./.build-wheels
       args:
         PIP_INDEXES: "${DELTA_PIP_INDEXES:-https://mirrors.aliyun.com/pypi/simple/ https://pypi.tuna.tsinghua.edu.cn/simple/ https://pypi.org/simple/}"
       network: "${DELTA_DOCKER_BUILD_NETWORK:-default}"

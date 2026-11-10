@@ -21,7 +21,7 @@ echo "==> اعتبارسنجی Compose"
 docker compose config -q
 
 echo "==> ساخت تمیز image"
-docker compose build --pull --no-cache web
+bash scripts/build-site-image.sh
 
 echo "==> راه‌اندازی و recreate سرویس‌ها"
 docker compose up -d db

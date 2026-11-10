@@ -8,3 +8,5 @@ media/
 postgres_data/
 *.sqlite3
 .DS_Store
+.build-wheels/*
+!.build-wheels/.gitkeep

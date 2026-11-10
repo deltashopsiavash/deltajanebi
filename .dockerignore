@@ -13,3 +13,4 @@ staticfiles/
 .vscode/
 .idea/
 README.md
+.build-wheels/

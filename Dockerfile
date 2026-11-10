@@ -15,7 +15,17 @@ COPY requirements.txt .
 # the first index is blocked or times out on restricted networks.
 # Set DELTA_PIP_INDEXES in the host environment to override the order.
 ARG PIP_INDEXES="https://mirrors.aliyun.com/pypi/simple/ https://pypi.tuna.tsinghua.edu.cn/simple/ https://pypi.org/simple/"
-RUN set -eu; \
+# Mount wheel files as a separate build context: they are NOT copied into the final image.
+# The installer builds these wheels with the server's host network, bypassing
+# broken container bridge/NAT routes and privileged BuildKit host networking.
+RUN --mount=type=bind,from=wheelhouse,target=/wheels,readonly \
+    set -eu; \
+    if [ -f /wheels/.requirements.sha256 ]; then \
+        echo "==> Installing cached wheels without network"; \
+        python -m pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt; \
+        exit 0; \
+    fi; \
+    echo "==> Wheelhouse empty; trying HTTPS indexes (manual Docker build)"; \
     for index in $PIP_INDEXES; do \
         echo "==> Trying Python package index: $index"; \
         if python -m pip install --no-cache-dir --timeout 25 --retries 1 --index-url "$index" -r requirements.txt; then \

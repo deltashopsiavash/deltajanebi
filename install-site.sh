@@ -129,7 +129,7 @@ chmod 600 /root/deltajanebi-bot-api-key.txt
 
 log "اعتبارسنجی Compose و ساخت کامل image"
 docker compose config -q
-docker compose build --pull --no-cache web
+bash scripts/build-site-image.sh
 
 log "راه‌اندازی دیتابیس، سایت، supervisor Sync دستی، Sync خودکار، رزرو و Caddy"
 docker compose up -d db
