@@ -99,3 +99,9 @@ sudo bash /opt/deltajanebi/scripts/resume-site.sh
 ```
 
 اگر ایمیج وجود نداشته باشد، دستور مرحله ساخت را اجرا می‌کند. خطاها با لاگ تشخیصی نمایش داده می‌شوند. فایل `.env` و حجم‌های Docker دست‌نخورده می‌مانند.
+
+### اجرای نصب از طریق pipe و ادامه نصب
+
+تمام دستورات `docker compose exec` در نصب، آپدیت، راستی‌آزمایی و بازیابی با `--interactive=false -T` اجرا می‌شوند؛ در غیر این صورت Docker Compose می‌تواند باقی متن `curl ... | bash` را از ورودی استاندارد بخواند و نصب ظاهراً بدون خطا پیش از راه‌اندازی Caddy تمام شود.
+
+اسکریپت بازیابی را می‌توان به شکل `curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/scripts/resume-site.sh | sudo bash` اجرا کرد. در CI نیز همین رفتار با `cat scripts/resume-site.sh | bash` پس از حذف کانتینرهای موقت بررسی می‌شود.

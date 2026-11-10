@@ -39,9 +39,9 @@ done
 [[ "$healthy" -eq 1 ]] || { docker compose logs --tail=180 web >&2 || true; echo "❌ web سالم نشد."; exit 1; }
 
 echo "==> migration + static + check"
-docker compose exec -T web python manage.py migrate --noinput
-docker compose exec -T web python manage.py collectstatic --noinput --clear
-docker compose exec -T web python manage.py check --fail-level ERROR
+docker compose exec --interactive=false -T web python manage.py migrate --noinput
+docker compose exec --interactive=false -T web python manage.py collectstatic --noinput --clear
+docker compose exec --interactive=false -T web python manage.py check --fail-level ERROR
 
 echo "==> تست API"
 API_KEY="$(grep '^DELTAJANEBI_BOT_API_KEY=' .env | head -n1 | cut -d= -f2- || true)"
@@ -52,8 +52,8 @@ if [[ -z "$API_KEY" ]]; then
   chmod 600 /root/deltajanebi-bot-api-key.txt
   docker compose up -d --force-recreate web syncjobs sync reservations
 fi
-docker compose exec -T web python scripts/check_bot_api.py
-docker compose exec -T web python scripts/check_site.py
+docker compose exec --interactive=false -T web python scripts/check_bot_api.py
+docker compose exec --interactive=false -T web python scripts/check_site.py
 
 echo "==> Starting Caddy and background workers"
 docker compose up -d --force-recreate syncjobs sync reservations caddy

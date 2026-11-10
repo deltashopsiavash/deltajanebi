@@ -218,11 +218,11 @@ jobs:
           bash scripts/verify-deployment.sh
           curl -kfsS --noproxy '*' --resolve localhost:443:127.0.0.1 https://localhost/ -o /dev/null
 
-      - name: Verify resume after containers are stopped
+      - name: Verify piped resume does not consume the script through Docker stdin
         run: |
           docker compose down
-          bash scripts/resume-site.sh
-          docker compose exec -T web python scripts/check_site.py
+          cat scripts/resume-site.sh | bash
+          docker compose exec --interactive=false -T web python scripts/check_site.py
 
       - name: Diagnostic logs after failed smoke test
         if: failure()

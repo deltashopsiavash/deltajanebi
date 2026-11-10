@@ -165,14 +165,14 @@ done
 [[ "$healthy" -eq 1 ]] || { docker compose logs --tail=160 web >&2 || true; fail "مهلت سلامت web تمام شد."; }
 
 log "اعمال migration، static و تنظیم نام فروشگاه"
-docker compose exec -T web python manage.py migrate --noinput
-docker compose exec -T web python manage.py collectstatic --noinput
-docker compose exec -T web python manage.py shell -c 'import os; from shop.models import SiteSetting; s=SiteSetting.load(); name=os.getenv("STORE_NAME","").strip(); phone=os.getenv("STORE_PHONE","").strip(); card=os.getenv("STORE_CARD_NUMBER","").strip(); owner=os.getenv("STORE_CARD_OWNER","").strip(); fields=[]; [(setattr(s,f,v),fields.append(f)) for f,v in (("store_name",name),("phone",phone),("card_number",card),("card_owner",owner)) if v]; s.save(update_fields=fields) if fields else None; print("store bootstrap: OK")'
-docker compose exec -T web python manage.py check --fail-level ERROR
+docker compose exec --interactive=false -T web python manage.py migrate --noinput
+docker compose exec --interactive=false -T web python manage.py collectstatic --noinput
+docker compose exec --interactive=false -T web python manage.py shell -c 'import os; from shop.models import SiteSetting; s=SiteSetting.load(); name=os.getenv("STORE_NAME","").strip(); phone=os.getenv("STORE_PHONE","").strip(); card=os.getenv("STORE_CARD_NUMBER","").strip(); owner=os.getenv("STORE_CARD_OWNER","").strip(); fields=[]; [(setattr(s,f,v),fields.append(f)) for f,v in (("store_name",name),("phone",phone),("card_number",card),("card_owner",owner)) if v]; s.save(update_fields=fields) if fields else None; print("store bootstrap: OK")'
+docker compose exec --interactive=false -T web python manage.py check --fail-level ERROR
 
 log "تست API اختصاصی DeltaJanebi و صفحه اصلی"
-docker compose exec -T web python scripts/check_bot_api.py
-docker compose exec -T web python scripts/check_site.py
+docker compose exec --interactive=false -T web python scripts/check_bot_api.py
+docker compose exec --interactive=false -T web python scripts/check_site.py
 
 log "راه‌اندازی Caddy و سرویس‌های پس‌زمینه"
 docker compose up -d --force-recreate syncjobs sync reservations caddy

@@ -56,8 +56,8 @@ if [[ "$healthy" != 1 ]]; then
 fi
 
 echo "==> Checking homepage and bot API"
-docker compose exec -T web python scripts/check_site.py
-docker compose exec -T web python scripts/check_bot_api.py
+docker compose exec --interactive=false -T web python scripts/check_site.py
+docker compose exec --interactive=false -T web python scripts/check_bot_api.py
 
 echo "==> Starting Caddy and background workers"
 docker compose up -d --no-build syncjobs sync reservations caddy

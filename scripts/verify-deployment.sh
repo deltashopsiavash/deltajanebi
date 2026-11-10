@@ -7,10 +7,10 @@ DOMAIN_NOW="$(sed -n 's/^DOMAIN=//p' .env | head -n1)"
 [[ -n "$DOMAIN_NOW" ]] || { echo "ERROR: DOMAIN is not configured" >&2; exit 1; }
 
 echo "==> Checking Django HTTP response inside web container"
-docker compose exec -T web python scripts/check_site.py
+docker compose exec --interactive=false -T web python scripts/check_site.py
 
 echo "==> Validating Caddy config"
-docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+docker compose exec --interactive=false -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 echo "==> Checking Caddy -> Django via local HTTPS (bypassing external DNS/CDN)"
 ok=0
