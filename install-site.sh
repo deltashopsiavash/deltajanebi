@@ -18,6 +18,16 @@ ask_secret(){ local var="$1" prompt="$2" value=""; while [[ -z "$value" ]]; do r
 valid_domain(){ [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]; }
 
 install_docker(){
+  # Existing installations should not need Ubuntu APT repositories on each retry.
+  if docker compose version >/dev/null 2>&1 \
+     && docker buildx version >/dev/null 2>&1 \
+     && command -v git >/dev/null 2>&1 \
+     && command -v curl >/dev/null 2>&1 \
+     && command -v openssl >/dev/null 2>&1; then
+    log "Docker و ابزارهای ضروری از قبل نصب هستند؛ عبور از apt-get"
+    systemctl enable --now docker
+    return
+  fi
   log "نصب Docker Engine و Compose"
   apt-get update -y
   apt-get install -y ca-certificates curl git openssl gnupg

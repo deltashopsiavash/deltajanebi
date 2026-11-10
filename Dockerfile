@@ -11,7 +11,20 @@ WORKDIR /app
 # No apt-get or curl is required during the image build.
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# APT-independent Python dependencies. Retry using separate HTTPS indexes if
+# the first index is blocked or times out on restricted networks.
+# Set DELTA_PIP_INDEXES in the host environment to override the order.
+ARG PIP_INDEXES="https://mirrors.aliyun.com/pypi/simple/ https://pypi.tuna.tsinghua.edu.cn/simple/ https://pypi.org/simple/"
+RUN set -eu; \
+    for index in $PIP_INDEXES; do \
+        echo "==> Trying Python package index: $index"; \
+        if python -m pip install --no-cache-dir --timeout 25 --retries 1 --index-url "$index" -r requirements.txt; then \
+            exit 0; \
+        fi; \
+        echo "WARNING: $index failed; trying next HTTPS mirror" >&2; \
+    done; \
+    echo "ERROR: No configured Python package index could be reached. Check container outbound HTTPS/DNS or set DELTA_PIP_INDEXES." >&2; \
+    exit 1
 
 COPY . .
 RUN chmod +x /app/entrypoint.sh
