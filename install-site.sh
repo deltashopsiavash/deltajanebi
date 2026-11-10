@@ -193,5 +193,13 @@ printf '🌐 سایت: https://%s\n' "$DOMAIN_NOW"
 printf '🔐 کلید اتصال ربات در این فایل امن ذخیره شد: /root/deltajanebi-bot-api-key.txt\n'
 printf 'برای دیدن کلید فقط روی خود سرور: sudo cat /root/deltajanebi-bot-api-key.txt\n'
 printf 'برای آپدیت‌های بعدی: sudo deltajanebi-update\n'
+if [[ "$DOMAIN_NOW" != "localhost" && "$DOMAIN_NOW" != "127.0.0.1" ]]; then
+  if curl -fsS --max-time 10 "https://${DOMAIN_NOW}/health/" >/dev/null 2>&1; then
+    echo "✅ دسترسی به دامنه از شبکه همین سرور برقرار است."
+  else
+    echo "⚠️ دسترسی عمومی به دامنه از این سرور تأیید نشد؛ DNS، رکورد A/AAAA، فایروال، Cloudflare و اعتبار SSL را بررسی کن."
+    echo "برای تشخیص: sudo bash /opt/deltajanebi/scripts/site-diagnostics.sh"
+  fi
+fi
 printf '\nبعد از نصب ربات خارج، داخل تلگرام /start → اتصال سایت → URL سایت → همین کلید را وارد کن.\n'
 docker compose ps
