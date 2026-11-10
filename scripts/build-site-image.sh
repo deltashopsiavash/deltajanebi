@@ -34,7 +34,7 @@ else
           fi
           echo "WARNING: Cannot download all wheels from $index" >&2
         done
-        echo "ERROR: None of the Python package repositories are reachable from the server's host network." >&2
+        echo "ERROR: No Python package repository is reachable through the server host network." >&2
         exit 1
       '; then
     echo "ERROR: The server cannot download Python wheels even with host networking." >&2
