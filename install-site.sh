@@ -18,6 +18,7 @@ on_install_error() {
   if [[ -s /root/deltajanebi-bot-api-key.txt ]]; then
     printf '🔐 کلید ربات از قبل ذخیره شده: sudo cat /root/deltajanebi-bot-api-key.txt\n' >&2
   fi
+  printf 'برای ادامه نصب بدون پاک‌شدن اطلاعات: sudo bash /opt/deltajanebi/scripts/resume-site.sh\n' >&2
   exit "$code"
 }
 trap 'on_install_error "$LINENO"' ERR
@@ -141,6 +142,7 @@ chmod 600 /root/deltajanebi-bot-api-key.txt
 # The key must be handed to the operator even if build/SSL fails later.
 printf '\n🔐 کلید اتصال ربات (فقط این ترمینال): %s\n' "$API_KEY" >"$TTY"
 printf '🔐 نسخه محفوظ کلید: /root/deltajanebi-bot-api-key.txt\n' >"$TTY"
+printf '⏳ کلید ساخته شد، ولی نصب سایت هنوز تمام نشده است؛ تا پیام ✅ نصب کامل شد ادامه بده.\n' >"$TTY"
 
 log "اعتبارسنجی Compose و ساخت کامل image"
 docker compose config -q

@@ -32,7 +32,7 @@ jobs:
       - name: Python compile check
         run: python -m compileall -q config shop enhancements
       - name: Shell syntax check
-        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh
+        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh scripts/resume-site.sh
       - name: Django system check
         run: python manage.py check --deploy --fail-level ERROR
       - name: Migration drift check
@@ -217,6 +217,12 @@ jobs:
           docker compose exec -T web python scripts/check_site.py
           bash scripts/verify-deployment.sh
           curl -kfsS --noproxy '*' --resolve localhost:443:127.0.0.1 https://localhost/ -o /dev/null
+
+      - name: Verify resume after containers are stopped
+        run: |
+          docker compose down
+          bash scripts/resume-site.sh
+          docker compose exec -T web python scripts/check_site.py
 
       - name: Diagnostic logs after failed smoke test
         if: failure()

@@ -20,8 +20,26 @@ else
   echo "Bot API key: missing"
 fi
 
-echo "--- Docker containers ---"
+echo "--- Docker containers in this project ---"
 docker compose ps -a 2>&1 || true
+echo "--- All Docker containers ---"
+docker ps -a --format '{{.Names}} | {{.Status}} | {{.Image}}' 2>&1 || true
+echo "--- Application image ---"
+if docker image inspect deltajanebi-app:latest >/dev/null 2>&1; then
+  echo "PRESENT: deltajanebi-app:latest"
+else
+  echo "MISSING: deltajanebi-app:latest (image build was not completed)"
+fi
+echo "--- Offline wheel cache ---"
+if [[ -f .build-wheels/.requirements.sha256 ]] && compgen -G '.build-wheels/*.whl' >/dev/null; then
+  echo "PRESENT: offline Python wheel cache"
+else
+  echo "MISSING: offline Python wheel cache"
+fi
+if [[ -z "$(docker compose ps -aq 2>/dev/null)" ]]; then
+  echo "CRITICAL: Zero site containers found; site cannot answer HTTP/HTTPS"
+  echo "RECOVERY: sudo bash /opt/deltajanebi/scripts/resume-site.sh"
+fi
 echo "--- Server IPv4 addresses ---"
 ip -4 -o addr show scope global 2>/dev/null | awk '{print $2, $4}' || true
 echo "--- Listening ports 80 and 443 ---"
