@@ -36,7 +36,9 @@ jobs:
       - name: Native installer security and resource contracts
         run: python scripts/test-native-install-contract.py
       - name: Native Resend email repair security contract
-        run: python scripts/test-native-email-contract.py
+        run: |
+          python scripts/test-native-email-contract.py
+          python scripts/test-resend-sender-recovery.py
       - name: BuildKit-free image assembly contract
         run: python scripts/test-build-fallback.py
       - name: Django system check
