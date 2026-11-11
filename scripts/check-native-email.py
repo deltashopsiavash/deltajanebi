@@ -23,8 +23,19 @@ if len(sys.argv) == 2 and sys.argv[1] == "--check-imports":
     print("Native Django project imports: OK")
     raise SystemExit(0)
 
-if len(sys.argv) != 2 or "@" not in sys.argv[1]:
-    raise SystemExit("Usage: check-native-email.py recipient@example.com")
+import re
+
+if len(sys.argv) not in (2, 4):
+    raise SystemExit("Usage: check-native-email.py recipient@example.com [--sender sender@example.com]")
+recipient = sys.argv[1]
+valid_email = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+if re.fullmatch(valid_email, recipient) is None:
+    raise SystemExit("Invalid test recipient email.")
+sender_override = None
+if len(sys.argv) == 4:
+    if sys.argv[2] != "--sender" or re.fullmatch(valid_email, sys.argv[3]) is None:
+        raise SystemExit("Invalid sender override.")
+    sender_override = sys.argv[3]
 
 import django
 django.setup()
@@ -35,8 +46,8 @@ from django.core.mail import send_mail
 sent = send_mail(
     "DeltaJanebi - email service test",
     "This is a test of verification-email delivery from DeltaJanebi.",
-    settings.DEFAULT_FROM_EMAIL,
-    [sys.argv[1]],
+    sender_override or settings.DEFAULT_FROM_EMAIL,
+    [recipient],
     fail_silently=False,
 )
 if sent != 1:
