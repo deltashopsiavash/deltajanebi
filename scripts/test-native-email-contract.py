@@ -63,4 +63,22 @@ try:
 finally:
     os.close(master)
 
+# Integration regression: execute check-native-email.py directly from outside
+# the project (the customer's shell is /root), without making any HTTP calls.
+import subprocess
+import tempfile
+import sys
+with tempfile.TemporaryDirectory() as outside:
+    program = Path("scripts/check-native-email.py").resolve()
+    result = subprocess.run(
+        [sys.executable, str(program), "--check-imports"],
+        cwd=outside,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        env=os.environ.copy(),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Native Django project imports: OK" in result.stdout
+
 print("Native Resend repair and confidential credentials contract: OK")
