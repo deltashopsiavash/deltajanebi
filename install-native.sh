@@ -10,6 +10,8 @@ APP_DIR=/opt/deltajanebi
 APP_USER=deltajanebi
 NATIVE_ENV=/etc/deltajanebi/native.env
 TTY=/dev/tty
+HAS_TTY=0
+[[ -t 1 ]] && HAS_TTY=1 || true
 
 fail(){ printf '\n❌ %s\n' "$*" >&2; exit 1; }
 log(){ printf '\n==> %s\n' "$*"; }
@@ -34,19 +36,19 @@ if [[ -d "$APP_DIR/.git" && ! -f "$NATIVE_ENV" ]]; then
   fail "An existing non-native site was found. Refusing to overwrite its deployment."
 fi
 command -v curl >/dev/null || fail "curl missing. Ubuntu minimal image should include curl."
-[[ -r "$TTY" || -n "${DELTA_SETUP_DOMAIN:-}" ]] ||
+[[ "$HAS_TTY" == 1 || -n "${DELTA_SETUP_DOMAIN:-}" ]] ||
   fail "An interactive SSH session is required to ask for the site's domain."
 
 ask(){
   local variable="$1" prompt="$2" default="$3" answer=""
-  if [[ -r "$TTY" ]]; then
+  if [[ "$HAS_TTY" == 1 ]]; then
     read -r -p "$prompt [$default]: " answer <"$TTY" || true
   fi
   printf -v "$variable" '%s' "${answer:-$default}"
 }
 ask_secret(){
   local variable="$1" prompt="$2" value=""
-  if [[ -r "$TTY" ]]; then
+  if [[ "$HAS_TTY" == 1 ]]; then
     read -r -s -p "$prompt: " value <"$TTY" || true
     printf '\n' >"$TTY"
   fi
@@ -79,7 +81,9 @@ else
       echo "Invalid domain; enter only a valid FQDN." >"$TTY"
     done
   fi
-  valid_domain "$DOMAIN_NOW" || fail "Invalid domain"
+  if [[ "$DOMAIN_NOW" != localhost || "${DELTA_NATIVE_TEST_MODE:-0}" != 1 ]]; then
+    valid_domain "$DOMAIN_NOW" || fail "Invalid domain"
+  fi
   ask STORE_NAME "Store name" "دلتا جانبی"
   ask ADMIN_EMAIL "Site owner email for Django admin" "admin@$DOMAIN_NOW"
   [[ "$ADMIN_EMAIL" == *"@"* ]] || fail "Invalid admin email"
@@ -144,11 +148,11 @@ EOF
 fi
 
 log "Installing native Ubuntu dependencies: Python, PostgreSQL and Caddy"
-apt-get update -y
+apt-get update -y -o Acquire::Retries=1 -o Acquire::http::Timeout=25 -o Acquire::https::Timeout=25
 if ! apt-cache show caddy >/dev/null 2>&1; then
   apt-get install -y software-properties-common
   add-apt-repository -y universe
-  apt-get update -y
+  apt-get update -y -o Acquire::Retries=1 -o Acquire::http::Timeout=25 -o Acquire::https::Timeout=25
 fi
 apt-get install -y --no-install-recommends \
   ca-certificates curl git openssl python3 python3-venv python3-pip \
