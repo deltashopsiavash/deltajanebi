@@ -42,6 +42,15 @@ def main():
         result = module.resolve(files, active=[("sanashop-bot", {"TELEGRAM_BOT_TOKEN": token1, "TELEGRAM_OWNER_ID": "777"})])
         assert result["TELEGRAM_BOT_TOKEN"] == token1
         assert result["TELEGRAM_OWNER_ID"] == "777"
+        # An old Delta poller with the same token must be stopped during migration,
+        # even when its on-disk config is incomplete.
+        files[0].write_text(f"BOT_DB_PATH={db}\nTELEGRAM_BOT_TOKEN={token1}\nTELEGRAM_OWNER_ID=777\n")
+        files[2].write_text("BOT_DB_PATH=/var/lib/deltajanebi-bot/bot.sqlite3\n")
+        running_same = module.resolve(files, active=[
+            ("sanashop-bot", {"TELEGRAM_BOT_TOKEN": token1, "TELEGRAM_OWNER_ID": "777"}),
+            ("deltajanebi-bot", {"TELEGRAM_BOT_TOKEN": token1, "TELEGRAM_OWNER_ID": "777"}),
+        ])
+        assert running_same["STOP_OLD_DELTA"] == "1"
         # Never take over when two different Telegram bots are running.
         try:
             module.resolve(files, active=[

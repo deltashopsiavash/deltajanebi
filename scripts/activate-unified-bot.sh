@@ -127,15 +127,11 @@ fi
 # Never print the token, even if troubleshooting is enabled.
 echo "Existing credentials loaded; shared database selected; values hidden."
 
-# Only stop/migrate an old standalone Delta service if it uses the SAME token.
-if [[ -r "$OLD_DELTA_ENV" ]]; then
-  LEGACY_TOKEN="$( (unset TELEGRAM_BOT_TOKEN BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${TELEGRAM_BOT_TOKEN:-}") )"
-  if [[ "$LEGACY_TOKEN" == "$TELEGRAM_BOT_TOKEN" ]]; then
-    STOP_OLD_DELTA=1
-    OLD_DELTA_DB="$( (unset BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${BOT_DB_PATH:-/var/lib/deltajanebi-bot/bot.sqlite3}") )"
-  fi
-fi
-if [[ "$STOP_OLD_DELTA" == 0 ]]; then OLD_DELTA_DB=""; fi
+# Credential resolver determines whether an old Delta service has the SAME
+# token, including when its config file is empty but its process is running.
+# Never stop a different bot's service or print its token.
+[[ "$STOP_OLD_DELTA" == "0" || "$STOP_OLD_DELTA" == "1" ]] ||
+  error "Invalid old Delta service identity; refusing to stop any bot."
 
 log "Preflight imports using the existing SanaShop Python runtime"
 cd "$DELTA_DIR"

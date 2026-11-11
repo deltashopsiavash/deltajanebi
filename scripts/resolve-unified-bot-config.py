@@ -123,14 +123,24 @@ def choose_database(files):
 
 def resolve(file_paths, active=None, inherited=None):
     files = [(Path(path).name, read_env_file(path)) for path in file_paths]
-    token, owner, source = choose_identity(active if active is not None else active_processes(), files, inherited)
+    running = active if active is not None else active_processes()
+    token, owner, source = choose_identity(running, files, inherited)
     database, lock = choose_database(files)
+    old_file = next((config for name, config in files if name == "deltajanebi-bot.env"), {})
+    old_active = next((config for name, config in running if name == "deltajanebi-bot"), {})
+    old_identifies_same_token = bool(token) and (
+        old_file.get("TELEGRAM_BOT_TOKEN") == token
+        or old_active.get("TELEGRAM_BOT_TOKEN") == token
+    )
     return {
         "TELEGRAM_BOT_TOKEN": token,
         "TELEGRAM_OWNER_ID": owner,
         "SANA_DB": database,
         "SANA_LOCK": lock,
         "CREDENTIAL_SOURCE": source,
+        "STOP_OLD_DELTA": "1" if old_identifies_same_token else "0",
+        "OLD_DELTA_DB": (old_file.get("BOT_DB_PATH") or "/var/lib/deltajanebi-bot/bot.sqlite3")
+                         if old_identifies_same_token else "",
     }
 
 
