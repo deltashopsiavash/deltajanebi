@@ -53,11 +53,19 @@ def update_config(original, updates):
 
 
 def prompt(message):
-    # STDIN belongs to the piped Bash installer; read from /dev/tty instead.
-    with open("/dev/tty", "r+", encoding="utf8") as tty:
-        tty.write(message)
-        tty.flush()
-        return tty.readline().strip()
+    # The installer is usually invoked through curl | sudo bash, so stdin is
+    # already owned by the pipeline. Read directly from its controlling TTY.
+    # NEVER open /dev/tty with "r+" in buffered text mode: a terminal is
+    # non-seekable and Python may raise io.UnsupportedOperation before prompting.
+    # Separate read and write streams work on SSH pseudo-terminals.
+    with open("/dev/tty", "r", encoding="utf8", buffering=1) as source:
+        with open("/dev/tty", "w", encoding="utf8", buffering=1) as display:
+            display.write(message)
+            display.flush()
+            response = source.readline()
+    if not response:
+        raise SystemExit("No interactive terminal input received; run from SSH.")
+    return response.strip()
 
 
 def write_private(path, contents, group):
