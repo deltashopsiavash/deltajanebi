@@ -46,9 +46,12 @@ class BrowserBackupRestoreTests(TestCase):
         self.client.force_login(self.owner)
         with TemporaryDirectory() as root:
             buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w") as arc:
+            with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as arc:
                 arc.writestr("manifest.json", "{}")
                 arc.writestr("database.json", "[]")
+                # Reproduce the exact Telegram failure category: document >20MiB.
+                arc.writestr("full-backup-media.bin", b"0" * (26 * 1024 * 1024))
+            assert len(buf.getvalue()) > 20 * 1024 * 1024
             with patch("enhancements.admin_backup_restore.BACKUP_DIR", Path(root)), \
                  patch("enhancements.admin_backup_restore.validate_backup_archive", return_value={"created_at": "2026-08-28"}) as check, \
                  patch("enhancements.admin_backup_restore.restore_backup_archive", return_value=Path(root) / "before-restore.deltabackup") as restore:
