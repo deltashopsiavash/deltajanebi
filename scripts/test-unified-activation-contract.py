@@ -8,6 +8,9 @@ assert "\\" + "${" not in activation, "Escaped shell parameters stop expansion"
 for token in ("${TELEGRAM_BOT_TOKEN:-}", "${TELEGRAM_OWNER_ID:-}"):
     assert token in activation, token
 assert 'source "$RESOLVED_ENV"' in activation
+assert 'scripts/unified-bot-preflight.py "$RESOLVED_ENV" "$SANA_DIR"' in activation
+assert 'rm -f "$RESOLVED_ENV"' in activation
+assert activation.index('scripts/unified-bot-preflight.py "$RESOLVED_ENV" "$SANA_DIR"') < activation.index('rm -f "$RESOLVED_ENV"\ntrap - EXIT'), "Private file must survive the preflight"
 assert 'BOT_DB_PATH="$SANA_DB"' in activation
 assert 'BOT_LOCK_PATH="$SANA_LOCK"' in activation
 assert "export TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_ID BOT_DB_PATH BOT_LOCK_PATH" in activation

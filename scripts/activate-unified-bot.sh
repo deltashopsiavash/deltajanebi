@@ -103,8 +103,8 @@ python3 "$DELTA_DIR/scripts/resolve-unified-bot-config.py" --output "$RESOLVED_E
 # This private file contains only Python shell-quoted assignments.
 # shellcheck disable=SC1090
 source "$RESOLVED_ENV"
-rm -f "$RESOLVED_ENV"
-trap - EXIT
+# Keep root-only secrets available until the isolated Python preflight completes.
+# Never pass tokens in process arguments or print file content.
 
 if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
   [[ -r /dev/tty ]] || error "Existing Telegram bot token missing and no interactive TTY is available."
@@ -146,17 +146,14 @@ cd "$DELTA_DIR"
   external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py \
   delta_footer_restore.py delta_source_restore.py delta_catalog_ui_v20.py \
   delta_banner_controls_v31.py delta_help_pages_v33.py delta_site_title_v34.py
-DELTAJANEBI_RUNTIME_DIR="$SANA_DIR" "$SANA_DIR/.venv/bin/python" - <<'PY'
-import external_bot_delta_v16 as unified
-import external_bot_delta_v15 as router
-import delta_bot_native as delta
-assert callable(unified.run)
-assert callable(unified.cancel)
-assert callable(router.routed_site_panel)
-assert callable(delta.callback)
-assert router.core.site_panel is router.routed_site_panel
-print("Unified router and SanaShop runtime imports: OK")
-PY
+# Pass the recovered identity by a private 0600 file, rather than relying on
+# a shell export. The Python loader explicitly places it in os.environ BEFORE
+# importing any SanaShop module (which requires TELEGRAM_OWNER_ID on import).
+printf 'TELEGRAM_BOT_TOKEN=%q\nTELEGRAM_OWNER_ID=%q\nSANA_DB=%q\nSANA_LOCK=%q\n' \
+  "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_OWNER_ID" "$SANA_DB" "$SANA_LOCK" > "$RESOLVED_ENV"
+"$SANA_DIR/.venv/bin/python" scripts/unified-bot-preflight.py "$RESOLVED_ENV" "$SANA_DIR"
+rm -f "$RESOLVED_ENV"
+trap - EXIT
 
 log "Making online backup of the existing SanaShop database"
 install -d -m 700 "$BACKUP_ROOT"

@@ -56,6 +56,10 @@ def main():
     if len(sys.argv) != 3:
         raise SystemExit("Usage: unified-bot-preflight.py PRIVATE_RESOLVED_ENV SANA_RUNTIME_DIR")
     owner, db = configure_runtime(sys.argv[1], sys.argv[2])
+    # Script lives under scripts/; ensure the repository's bot entrypoint is importable.
+    project_root = str(Path(__file__).resolve().parents[1])
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
     # This import chain mirrors the actual systemd entrypoint, not a mock.
     import external_bot_delta_v16 as unified
     import external_bot_delta_v15 as router
