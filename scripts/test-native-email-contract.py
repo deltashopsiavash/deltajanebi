@@ -81,4 +81,13 @@ with tempfile.TemporaryDirectory() as outside:
     assert result.returncode == 0, result.stderr
     assert "Native Django project imports: OK" in result.stdout
 
+# The retest command may be invoked by piping a GitHub script into Bash.
+# Ensure it stays valid Bash and never asks for provider secrets a second time.
+command = Path("scripts/verify-native-email.sh")
+assert command.is_file()
+assert "scripts/update-native.sh" in command.read_text()
+assert "--check-imports" in command.read_text()
+assert "check-native-email.py" in command.read_text()
+assert subprocess.run(["bash", "-n", str(command)], capture_output=True).returncode == 0
+
 print("Native Resend repair and confidential credentials contract: OK")
