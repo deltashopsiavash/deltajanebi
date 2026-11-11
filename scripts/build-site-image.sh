@@ -46,4 +46,40 @@ fi
 
 echo "==> Docker image build: install cached Python wheels OFFLINE"
 docker compose config -q
-docker compose build --pull --no-cache web
+
+# The standard Compose build may delegate to a Bake session. Some VPS Docker
+# engines cancel the Bake frontend before Dockerfile stages start:
+#   NotFound: forwarding Ping: no such job ...
+# Build the SAME image directly with the built-in Docker builder. This avoids
+# Compose Bake entirely, requires no internet for pip, and leaves running
+# containers, volumes and databases unchanged until the image is ready.
+echo "==> Building directly with Docker's default builder (no Compose Bake)"
+if docker buildx build \
+    --builder default \
+    --load \
+    --progress plain \
+    --build-context "wheelhouse=$WHEELS_DIR" \
+    --file Dockerfile \
+    --tag deltajanebi-app:latest \
+    .; then
+  echo "✅ DeltaJanebi Docker image built and loaded successfully"
+elif [[ "${DELTA_SKIP_BUILD_FALLBACK:-0}" == "1" ]]; then
+  echo "ERROR: Direct Buildx build failed; fallback disabled by DELTA_SKIP_BUILD_FALLBACK=1." >&2
+  exit 1
+else
+  echo "WARNING: Direct Buildx build failed. Trying Compose with Bake explicitly disabled." >&2
+  if COMPOSE_BAKE=false BUILDX_BUILDER=default docker compose build --progress plain web; then
+    echo "✅ DeltaJanebi image built through Compose fallback"
+  else
+    echo "ERROR: Both direct Docker Buildx and Compose without Bake failed." >&2
+    echo "The old website/database were not stopped or deleted by the build." >&2
+    echo "Inspect Docker Engine/BuildKit logs and available RAM/disk before trying again:" >&2
+    echo "  journalctl -u docker -n 80 --no-pager" >&2
+    echo "  free -h; df -h /var/lib/docker; docker buildx ls" >&2
+    exit 1
+  fi
+fi
+docker image inspect deltajanebi-app:latest >/dev/null || {
+  echo "ERROR: The built DeltaJanebi image could not be found; refusing deployment." >&2
+  exit 1
+}

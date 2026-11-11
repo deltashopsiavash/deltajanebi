@@ -14,3 +14,7 @@ staticfiles/
 .idea/
 README.md
 .build-wheels/
+
+# Never include database/media archives in an application image.
+backups/
+*.deltabackup

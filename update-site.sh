@@ -25,7 +25,7 @@ bash scripts/build-site-image.sh
 
 echo "==> راه‌اندازی و recreate سرویس‌ها"
 docker compose up -d db
-docker compose up -d --force-recreate web
+docker compose up -d --no-build --force-recreate web
 
 WEB_ID="$(docker compose ps -q --all web)"
 [[ -n "$WEB_ID" ]] || { echo "❌ web ساخته نشد."; exit 1; }
@@ -50,13 +50,13 @@ if [[ -z "$API_KEY" ]]; then
   printf '\nDELTAJANEBI_BOT_API_KEY=%s\n' "$API_KEY" >>.env
   printf '%s\n' "$API_KEY" >/root/deltajanebi-bot-api-key.txt
   chmod 600 /root/deltajanebi-bot-api-key.txt
-  docker compose up -d --force-recreate web syncjobs sync reservations
+  docker compose up -d --no-build --force-recreate web syncjobs sync reservations
 fi
 docker compose exec --interactive=false -T web python scripts/check_bot_api.py
 docker compose exec --interactive=false -T web python scripts/check_site.py
 
 echo "==> Starting Caddy and background workers"
-docker compose up -d --force-recreate syncjobs sync reservations caddy
+docker compose up -d --no-build --force-recreate syncjobs sync reservations caddy
 if ! bash scripts/verify-deployment.sh; then
   bash scripts/site-diagnostics.sh >&2 || true
   exit 1
