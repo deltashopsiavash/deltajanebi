@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Deploy builds must avoid Compose Bake, preserve persistent volumes and reuse wheels."""
+"""Regressions for a BuildKit-free, secret-safe Delta site image."""
 from pathlib import Path
 
 builder = Path("scripts/build-site-image.sh").read_text()
 updater = Path("update-site.sh").read_text()
-dockerignore = Path(".dockerignore").read_text()
-
-assert "docker buildx build" in builder
-assert "--builder default" in builder
-assert "--load" in builder
-assert '--build-context "wheelhouse=$WHEELS_DIR"' in builder
-assert "COMPOSE_BAKE=false BUILDX_BUILDER=default docker compose build" in builder
-assert "docker image inspect deltajanebi-app:latest" in builder
+for expected in (
+    "docker run -d", "docker cp -", "docker exec", "docker commit",
+    "docker image tag", "git ls-files -z", "--network none",
+    "--no-index --find-links=/opt/delta-wheels",
+    "trap cleanup_image_assembly EXIT", "timeout --signal=TERM",
+    "--exclude='.env'", "--exclude='media/*'", "--exclude='backups/*'",
+):
+    assert expected in builder, expected
+assert "docker compose build " not in builder
+assert "docker buildx build " not in builder
 assert "docker compose down -v" not in builder
-assert "docker builder prune" not in builder
 assert "rm -rf /var/lib/docker" not in builder
+assert builder.index('docker commit') < builder.index('docker image tag "$PENDING_IMAGE" deltajanebi-app:latest')
 assert "docker compose up -d --no-build --force-recreate web" in updater
 assert "docker compose up -d --no-build --force-recreate syncjobs sync reservations caddy" in updater
-assert "backups/" in dockerignore and "*.deltabackup" in dockerignore
-print("Safe direct Buildx/no-Bake fallback, wheel cache and volume preservation: OK")
+print("BuildKit-free image assembly and persistent-data isolation contract: OK")

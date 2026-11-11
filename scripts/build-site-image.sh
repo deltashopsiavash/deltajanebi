@@ -44,42 +44,70 @@ else
   printf '%s\n' "$WHEEL_KEY" >"$WHEELS_DIR/.requirements.sha256"
 fi
 
-echo "==> Docker image build: install cached Python wheels OFFLINE"
+echo "==> Assembling DeltaJanebi image WITHOUT Docker BuildKit or Buildx"
 docker compose config -q
 
-# The standard Compose build may delegate to a Bake session. Some VPS Docker
-# engines cancel the Bake frontend before Dockerfile stages start:
-#   NotFound: forwarding Ping: no such job ...
-# Build the SAME image directly with the built-in Docker builder. This avoids
-# Compose Bake entirely, requires no internet for pip, and leaves running
-# containers, volumes and databases unchanged until the image is ready.
-echo "==> Building directly with Docker's default builder (no Compose Bake)"
-if docker buildx build \
-    --builder default \
-    --load \
-    --progress plain \
-    --build-context "wheelhouse=$WHEELS_DIR" \
-    --file Dockerfile \
-    --tag deltajanebi-app:latest \
-    .; then
-  echo "✅ DeltaJanebi Docker image built and loaded successfully"
-elif [[ "${DELTA_SKIP_BUILD_FALLBACK:-0}" == "1" ]]; then
-  echo "ERROR: Direct Buildx build failed; fallback disabled by DELTA_SKIP_BUILD_FALLBACK=1." >&2
-  exit 1
-else
-  echo "WARNING: Direct Buildx build failed. Trying Compose with Bake explicitly disabled." >&2
-  if COMPOSE_BAKE=false BUILDX_BUILDER=default docker compose build --progress plain web; then
-    echo "✅ DeltaJanebi image built through Compose fallback"
-  else
-    echo "ERROR: Both direct Docker Buildx and Compose without Bake failed." >&2
-    echo "The old website/database were not stopped or deleted by the build." >&2
-    echo "Inspect Docker Engine/BuildKit logs and available RAM/disk before trying again:" >&2
-    echo "  journalctl -u docker -n 80 --no-pager" >&2
-    echo "  free -h; df -h /var/lib/docker; docker buildx ls" >&2
-    exit 1
+# Direct Buildx and Compose Bake may hang for hours with "forwarding Ping:
+# no such job" on this VPS. Assemble identical image with normal Docker run,
+# cp, exec and commit; these actions never involve BuildKit at any stage.
+# DO NOT send secret .env files, untracked media, or live databases to an image.
+# The existing app image remains unchanged until the new candidate is verified.
+TMP_CONTAINER="deltajanebi-image-assembly-$$"
+PENDING_IMAGE="deltajanebi-app:pending-$$"
+CONTAINER_CREATED=0
+cleanup_image_assembly() {
+  if [[ "$CONTAINER_CREATED" == "1" ]]; then
+    docker rm -f "$TMP_CONTAINER" >/dev/null 2>&1 || true
   fi
-fi
-docker image inspect deltajanebi-app:latest >/dev/null || {
-  echo "ERROR: The built DeltaJanebi image could not be found; refusing deployment." >&2
-  exit 1
+  docker image rm "$PENDING_IMAGE" >/dev/null 2>&1 || true
 }
+trap cleanup_image_assembly EXIT
+
+echo "==> Starting isolated Python container; Docker run only"
+timeout --signal=TERM --kill-after=15s 120s \
+  docker run -d --name "$TMP_CONTAINER" --network none \
+    --workdir /app \
+    --volume "$WHEELS_DIR:/opt/delta-wheels:ro" \
+    --entrypoint /bin/sh \
+    python:3.12-slim -c 'while :; do sleep 600; done'
+CONTAINER_CREATED=1
+
+echo "==> Copying Git-tracked source only; .env, backups, media excluded"
+# Only tracked Git files are copied, with sensitive paths explicitly excluded.
+git ls-files -z --cached | tar --null \
+  --exclude='.env' --exclude='.env.*' \
+  --exclude='*.sqlite3' --exclude='*.deltabackup' \
+  --exclude='.build-wheels/*' --exclude='media/*' \
+  --exclude='backups/*' --exclude='staticfiles/*' \
+  -T - -cf - | timeout --signal=TERM --kill-after=15s 120s \
+  docker cp - "$TMP_CONTAINER:/app"
+
+echo "==> Installing Python dependencies from wheel cache, fully offline"
+timeout --signal=TERM --kill-after=15s 900s \
+  docker exec "$TMP_CONTAINER" /bin/sh -ec '
+    python -m pip install --no-cache-dir --no-index --find-links=/opt/delta-wheels -r /app/requirements.txt
+    chmod +x /app/entrypoint.sh
+    python -c "import django, gunicorn; print(\"Offline Python environment OK\")"
+  '
+
+echo "==> Committing assembled image without Dockerfile build"
+timeout --signal=TERM --kill-after=15s 240s \
+  docker commit \
+    --change 'WORKDIR /app' \
+    --change 'ENV PYTHONDONTWRITEBYTECODE=1' \
+    --change 'ENV PYTHONUNBUFFERED=1' \
+    --change 'ENV PIP_DISABLE_PIP_VERSION_CHECK=1' \
+    --change 'ENV PIP_ROOT_USER_ACTION=ignore' \
+    --change 'ENTRYPOINT ["/app/entrypoint.sh"]' \
+    --change 'CMD ["gunicorn","config.wsgi:application","--bind","0.0.0.0:8000","--workers","3","--timeout","60"]' \
+    "$TMP_CONTAINER" "$PENDING_IMAGE"
+
+echo "==> Checking candidate image before replacing the previous image tag"
+timeout --signal=TERM --kill-after=15s 90s \
+  docker run --rm --network none --entrypoint python "$PENDING_IMAGE" \
+    -c 'import django, gunicorn; from pathlib import Path; assert Path("/app/manage.py").is_file(); print("Built image verified")'
+docker image tag "$PENDING_IMAGE" deltajanebi-app:latest
+docker image inspect deltajanebi-app:latest >/dev/null
+
+echo "✅ New DeltaJanebi image assembled WITHOUT Docker BuildKit."
+echo "✅ PostgreSQL, live containers, media, backups, and .env were not changed."
