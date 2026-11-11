@@ -1,4 +1,7 @@
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 from django.contrib import messages
 from django.contrib.auth import login
@@ -50,6 +53,7 @@ def register(request):
         try:
             send_otp_email(user, otp)
         except Exception:
+            logger.exception("Registration OTP email delivery failed")
             messages.error(request, "حساب ساخته شد اما ارسال کد تأیید ممکن نشد. تنظیمات ایمیل را بررسی کنید و ارسال مجدد را بزنید.")
         return redirect("verify_email_code")
     return render(request, "registration/register.html", {"form": form, "next": next_url})
@@ -74,6 +78,7 @@ def verify_email_code(request):
         try:
             send_otp_email(user, otp)
         except Exception:
+            logger.exception("Initial OTP email delivery failed")
             messages.error(request, "ارسال کد تأیید ممکن نشد.")
 
     if request.method == "POST" and request.POST.get("action") == "resend":
@@ -86,6 +91,7 @@ def verify_email_code(request):
                 send_otp_email(user, otp)
                 messages.success(request, "کد جدید ارسال شد.")
             except Exception:
+                logger.exception("Resent OTP email delivery failed")
                 messages.error(request, "ارسال کد جدید ممکن نشد.")
         return redirect("verify_email_code")
 

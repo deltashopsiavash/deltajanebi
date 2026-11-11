@@ -79,7 +79,14 @@ EMAIL_HOST_USER = os.getenv("SMTP_USER") or os.getenv("EMAIL_HOST_USER") or ""
 EMAIL_HOST_PASSWORD = os.getenv("SMTP_PASSWORD") or os.getenv("EMAIL_HOST_PASSWORD") or ""
 EMAIL_USE_TLS = (os.getenv("SMTP_USE_TLS") or os.getenv("EMAIL_USE_TLS") or "1") == "1"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER or "noreply@localhost"
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD else "django.core.mail.backends.console.EmailBackend"
+RESEND_API_KEY = os.getenv("RESEND_API_KEY") or os.getenv("SMTP_PASSWORD") or ""
+EMAIL_TIMEOUT = 18
+if os.getenv("DELTA_EMAIL_TRANSPORT", "").lower() == "resend":
+    # Native install: fail explicitly if key is absent; do not print OTPs to console.
+    EMAIL_BACKEND = "enhancements.resend_backend.ResendEmailBackend"
+else:
+    # Leave existing Docker deployments on their original SMTP configuration.
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if EMAIL_HOST_USER and EMAIL_HOST_PASSWORD else "django.core.mail.backends.console.EmailBackend"
 PASSWORD_RESET_TIMEOUT = 3600
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

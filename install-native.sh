@@ -114,6 +114,8 @@ else
   env_line SMTP_PORT 587
   env_line SMTP_USER resend
   env_line SMTP_PASSWORD "$RESEND_KEY"
+  env_line RESEND_API_KEY "$RESEND_KEY"
+  env_line DELTA_EMAIL_TRANSPORT resend
   env_line SMTP_USE_TLS 1
   env_line DEFAULT_FROM_EMAIL "$RESEND_FROM"
   env_line SOURCE_SYNC_INTERVAL 1800
