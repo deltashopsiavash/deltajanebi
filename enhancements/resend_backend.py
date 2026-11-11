@@ -25,9 +25,29 @@ class ResendEmailBackend(BaseEmailBackend):
         except requests.RequestException:
             raise ResendDeliveryError("Resend HTTPS connection failed: check outbound TCP/443.") from None
         if response.status_code not in (200, 201):
+            # Classify the provider's diagnostic *without* echoing a raw
+            # response body, email content, or credentials into service logs.
+            try:
+                detail = response.json()
+                reason = str(detail.get("message") or "").lower() if isinstance(detail, dict) else ""
+                error_name = str(detail.get("name") or "").lower() if isinstance(detail, dict) else ""
+            except (ValueError, TypeError, AttributeError):
+                reason, error_name = "", ""
+            if response.status_code == 403 and ("not verified" in reason or "unverified" in reason):
+                advice = "Sender domain is not verified. Match DEFAULT_FROM_EMAIL to the exact domain verified in Resend (for example mail.example.com)."
+            elif response.status_code == 403 and ("testing emails" in reason or "own email" in reason):
+                advice = "Testing mode limits recipients. Verify a sender domain in Resend."
+            elif response.status_code == 403 and ("restricted" in reason or "permission" in reason):
+                advice = "API key lacks sending permission for this sender domain."
+            elif response.status_code == 403:
+                advice = "Forbidden: check sender domain verification and any API key domain restrictions."
+            elif response.status_code == 401:
+                advice = "Invalid or revoked API key. Check Resend API Keys."
+            else:
+                advice = "Check the Resend dashboard and sender configuration."
+            safe_kind = error_name if error_name in {"validation_error", "authorization_error", "authentication_error", "restricted_api_key"} else "provider_error"
             raise ResendDeliveryError(
-                "Resend rejected email (HTTP %s); check API key, verified sender, and provider dashboard."
-                % response.status_code
+                "Resend HTTP %s (%s): %s" % (response.status_code, safe_kind, advice)
             )
         try:
             accepted = response.json().get("id")
