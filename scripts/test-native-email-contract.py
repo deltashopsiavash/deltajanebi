@@ -11,7 +11,11 @@ assert "native.env" in src and "getpass.getpass" in src
 assert "os.chmod(temporary, 0o640)" in src
 assert "shutil.copyfile(CONFIG, ENV_COPY)" in src
 assert 'subprocess.run(["systemctl", "restart", "deltajanebi-web"]' in src
-assert 'open("/dev/tty"' in src
+# Regression for the actual failure: r+ uses a seek-requiring buffered
+# stream and may raise io.UnsupportedOperation on non-seekable SSH terminals.
+assert 'open("/dev/tty", "r+"' not in src
+assert 'open("/dev/tty", "r", encoding="utf8"' in src
+assert 'open("/dev/tty", "w", encoding="utf8"' in src
 assert "native-env-exec.py" in src
 assert "getpass" in src and "api_key" in src
 assert "sudo cat" not in shell and "echo $SMTP_PASSWORD" not in shell
