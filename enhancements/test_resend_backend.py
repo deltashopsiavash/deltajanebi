@@ -50,6 +50,20 @@ class ResendEmailTests(SimpleTestCase):
         post.assert_not_called()
 
     @patch("enhancements.resend_backend.requests.post")
+    def test_unverified_domain_403_has_safe_specific_diagnostic(self, post):
+        response = self.accepted(403)
+        response.json.return_value = {
+            "name": "validation_error",
+            "message": "The deltajanebishop.ir domain is not verified.",
+        }
+        post.return_value = response
+        with self.assertRaises(ResendDeliveryError) as exc:
+            send_mail("OTP", "123456", None, ["person@gmail.com"])
+        self.assertIn("HTTP 403", str(exc.exception))
+        self.assertIn("Sender domain is not verified", str(exc.exception))
+        self.assertNotIn("re_test_fake_key", str(exc.exception))
+
+    @patch("enhancements.resend_backend.requests.post")
     def test_provider_401_does_not_log_secret(self, post):
         post.return_value = self.accepted(401)
         with self.assertRaises(ResendDeliveryError) as captured:
