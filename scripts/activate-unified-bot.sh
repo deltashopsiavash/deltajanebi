@@ -87,20 +87,20 @@ set -a
 # shellcheck disable=SC1090
 source "$SANA_ENV"
 set +a
-[[ -n "\${TELEGRAM_BOT_TOKEN:-}" && "\${TELEGRAM_OWNER_ID:-}" =~ ^[0-9]+$ ]] ||
+[[ -n "${TELEGRAM_BOT_TOKEN:-}" && "${TELEGRAM_OWNER_ID:-}" =~ ^[0-9]+$ ]] ||
   error "SanaShop bot token or numeric owner ID is missing."
-SANA_DB="\${BOT_DB_PATH:-/var/lib/sanashop-bot/bot.sqlite3}"
-SANA_LOCK="\${BOT_LOCK_PATH:-/var/lib/sanashop-bot/runtime.lock}"
+SANA_DB="${BOT_DB_PATH:-/var/lib/sanashop-bot/bot.sqlite3}"
+SANA_LOCK="${BOT_LOCK_PATH:-/var/lib/sanashop-bot/runtime.lock}"
 [[ -s "$SANA_DB" ]] || error "Existing SanaShop DB is missing/empty: $SANA_DB. Refusing to create a fresh DB."
 [[ -f "/etc/systemd/system/sanashop-bot.service" ]] ||
   error "Existing sanashop-bot.service was not found; inspect installation before migration."
 
 # Only stop/migrate an old standalone Delta service if it uses the SAME token.
 if [[ -r "$OLD_DELTA_ENV" ]]; then
-  LEGACY_TOKEN="$( (source "$OLD_DELTA_ENV"; printf '%s' "\${TELEGRAM_BOT_TOKEN:-}") )"
+  LEGACY_TOKEN="$( (unset TELEGRAM_BOT_TOKEN BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${TELEGRAM_BOT_TOKEN:-}") )"
   if [[ "$LEGACY_TOKEN" == "$TELEGRAM_BOT_TOKEN" ]]; then
     STOP_OLD_DELTA=1
-    OLD_DELTA_DB="$( (source "$OLD_DELTA_ENV"; printf '%s' "\${BOT_DB_PATH:-/var/lib/deltajanebi-bot/bot.sqlite3}") )"
+    OLD_DELTA_DB="$( (unset BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${BOT_DB_PATH:-/var/lib/deltajanebi-bot/bot.sqlite3}") )"
   fi
 fi
 if [[ "$STOP_OLD_DELTA" == 0 ]]; then OLD_DELTA_DB=""; fi

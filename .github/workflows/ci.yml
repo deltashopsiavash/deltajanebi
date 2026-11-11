@@ -108,6 +108,8 @@ jobs:
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Shared SanaShop/Delta bot database migration regression
         run: python bot_unified_db_regression.py
+      - name: Shared bot activation environment regression
+        run: python scripts/test-unified-activation-contract.py
       - name: Native footer flow regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
       - name: Native source controls regression
