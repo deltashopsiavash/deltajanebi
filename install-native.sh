@@ -93,7 +93,7 @@ else
     ask_secret ADMIN_PASS "Choose admin password (hidden)"
   fi
   [[ "${#ADMIN_PASS}" -ge 10 ]] || fail "Administrator password must contain at least 10 characters."
-  ask RESEND_FROM "Verified Resend sender email (optional)" "support@$DOMAIN_NOW"
+  ask RESEND_FROM "Verified Resend sender email (optional; old installer used mail subdomain)" "support@mail.$DOMAIN_NOW"
   ask_secret RESEND_KEY "Resend SMTP/API key (leave blank to configure later)"
   [[ "$RESEND_FROM" == *"@"* ]] || fail "Invalid sender email"
 
