@@ -112,7 +112,9 @@ async def check_open_site_platform_detection(sana_site, delta_site):
         u = Update(f"open_site:{sana_site['id']}")
         await router.callback(u, Context())
         markup = u.callback_query.edits[-1][1]
-        assert "🖼 گالری تصاویر محصولات" in labels(markup)
+        # Preserve the SanaShop v16 router's original compact site panel
+        # instead of injecting Delta-specific buttons or replacing Sana's UX.
+        assert "🛍 محصولات" in labels(markup)
         assert "👥 کاربران و کیف پول" not in labels(markup)
     finally:
         core.api = original_api
