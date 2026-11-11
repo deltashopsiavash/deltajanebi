@@ -32,7 +32,9 @@ jobs:
       - name: Python compile check
         run: python -m compileall -q config shop enhancements
       - name: Shell syntax check
-        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh scripts/resume-site.sh scripts/activate-unified-bot.sh
+        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh scripts/resume-site.sh scripts/activate-unified-bot.sh install-native.sh scripts/update-native.sh
+      - name: Native installer security and resource contracts
+        run: python scripts/test-native-install-contract.py
       - name: BuildKit-free image assembly contract
         run: python scripts/test-build-fallback.py
       - name: Django system check

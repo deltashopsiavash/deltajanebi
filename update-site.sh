@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Native deployments update without Docker, while older Docker installs stay unchanged.
+if [[ -f /etc/deltajanebi/native.env ]]; then
+  [[ -r /opt/deltajanebi/scripts/update-native.sh ]] || {
+    echo "ERROR: Native updater missing; checkout incomplete." >&2
+    exit 1
+  }
+  exec bash /opt/deltajanebi/scripts/update-native.sh
+fi
+
 [[ ${EUID} -eq 0 ]] || { echo "این دستور باید با sudo/root اجرا شود."; exit 1; }
 APP_DIR="/opt/deltajanebi"
 [[ -d "$APP_DIR/.git" ]] || { echo "❌ DeltaJanebi در $APP_DIR نصب نیست. اول install-site.sh را اجرا کن."; exit 1; }

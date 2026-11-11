@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Fresh installs default to native; existing Docker sites remain on their old path.
+# Native retries are routed back to the native installer after partial installs.
+if [[ "${DELTA_INSTALL_MODE:-native}" != "docker" ]] && \
+   { [[ -f /etc/deltajanebi/native.env ]] || [[ ! -d /opt/deltajanebi/.git ]]; }; then
+  [[ "$EUID" -eq 0 ]] || { echo "Run with sudo/root"; exit 1; }
+  TMP_NATIVE_INSTALL="$(mktemp /tmp/deltajanebi-native-install.XXXXXXXX)"
+  trap 'rm -f "$TMP_NATIVE_INSTALL"' EXIT
+  curl --fail --silent --show-error --location --retry 3 \
+    https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/install-native.sh \
+    -o "$TMP_NATIVE_INSTALL"
+  bash "$TMP_NATIVE_INSTALL"
+  exit 0
+fi
+
 REPO="https://github.com/deltashopsiavash/deltajanebi.git"
 APP_DIR="/opt/deltajanebi"
 TTY="/dev/tty"

@@ -1,5 +1,17 @@
 # DeltaJanebi
 
+## نصب جدید روی Ubuntu 24.04 LTS — بدون Docker (مناسب VPS کوچک)
+
+روی سرور ایران تازه نصب‌شده با Ubuntu 24.04 LTS همین دستور را اجرا کن. نصب از تو دامنه، نام فروشگاه، ایمیل مدیر، رمز ادمین و مشخصات اختیاری Resend را می‌پرسد:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/install-site.sh | sudo bash
+```
+
+در نصب تازه Docker وجود ندارد: PostgreSQL محلی + Gunicorn کم‌مصرف + Caddy/HTTPS و سرویس‌های systemd. روی VPS کم‌رم یک Swap دوگیگابایتی ساخته می‌شود. Sync دستی فعال و Sync دوره‌ای سنگین به‌طور پیش‌فرض خاموش است؛ برای روشن‌کردن آن پس از ارتقای RAM: `sudo systemctl enable --now deltajanebi-auto-sync`. آپدیت: `sudo deltajanebi-update`. نصب‌های موجود Docker به همان مسیر قدیمی می‌مانند.
+
+کلید API برای اتصال مجدد ربات مشترک در `/root/deltajanebi-bot-api-key.txt` ذخیره می‌شود. برای HTTPS عمومی، DNS باید به آی‌پی سرور اشاره کند و پورت‌های ۸۰ و ۴۴۳ باز باشند.
+
 ## نصب
 
 ### سرور ایران — سایت

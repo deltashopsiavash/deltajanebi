@@ -57,12 +57,14 @@ env_line(){
   local name="$1" value="$2"
   # Quoted systemd EnvironmentFile format, also understood by Python shlex.
   value="${value//\\/\\\\}"
-  value="${value//\\"/\\\\"}"
+  value=${value//\"/\\\"}
   printf '%s="%s"\n' "$name" "$value" >>"$NATIVE_ENV"
 }
 
 if [[ -f "$NATIVE_ENV" ]]; then
   DOMAIN_NOW="$(sed -n 's/^DOMAIN=//p' "$NATIVE_ENV" | tr -d '"' | head -n1)"
+  ADMIN_EMAIL="$(sed -n 's/^DJANGO_ADMIN_EMAIL=//p' "$NATIVE_ENV" | tr -d '"' | head -n1)"
+  ADMIN_EMAIL="${ADMIN_EMAIL:-admin@$DOMAIN_NOW}"
   log "Existing native config found; reusing domain and credentials"
 else
   log "Setup: native DeltaJanebi (no Docker)"
@@ -103,6 +105,7 @@ else
   env_line DATABASE_URL "postgresql:///deltajanebi?host=/var/run/postgresql"
   env_line DELTAJANEBI_BOT_API_KEY "$BOT_KEY"
   env_line STORE_NAME "$STORE_NAME"
+  env_line DJANGO_ADMIN_EMAIL "$ADMIN_EMAIL"
   env_line SMTP_HOST smtp.resend.com
   env_line SMTP_PORT 587
   env_line SMTP_USER resend
@@ -199,6 +202,9 @@ if ! "$APP_DIR/.venv/bin/python" -m pip install --no-cache-dir --prefer-binary -
 fi
 
 log "Preparing private configuration, media, static and backup folders"
+# Make the private directory traversable by the Django service user.
+chown root:"$APP_USER" /etc/deltajanebi
+chmod 750 /etc/deltajanebi
 install -d -m 750 -o "$APP_USER" -g "$APP_USER" \
   "$APP_DIR/media" "$APP_DIR/backups"
 install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$APP_DIR/staticfiles"
@@ -219,14 +225,14 @@ log "Migrating database and collecting static assets"
 run_django migrate --noinput
 run_django collectstatic --noinput
 run_django check --fail-level ERROR
+run_django shell -c 'import os; from shop.models import SiteSetting; s=SiteSetting.load(); name=os.getenv("STORE_NAME","").strip(); s.store_name=name or s.store_name; s.save(update_fields=["store_name"]); print("Store branding initialized")'
 
 if [[ -n "${ADMIN_PASS:-}" ]]; then
   log "Creating site owner (password hidden)"
   printf '%s\n' "$ADMIN_PASS" | runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
     "$APP_DIR/scripts/native-env-exec.py" "$NATIVE_ENV" \
     "$APP_DIR/.venv/bin/python" "$APP_DIR/manage.py" shell -c \
-    'import sys; from django.contrib.auth import get_user_model; u=get_user_model(); email=sys.argv[1]; password=sys.stdin.readline().rstrip("\n"); obj,created=u.objects.get_or_create(email=email, defaults={"is_superuser":True,"is_staff":True,"is_active":True}); obj.is_superuser=True; obj.is_staff=True; obj.is_active=True; obj.set_password(password); obj.save(); print("Site owner ready (password hidden)")' \
-    "$ADMIN_EMAIL"
+    'import os,sys; from django.contrib.auth import get_user_model; u=get_user_model(); email=os.environ["DJANGO_ADMIN_EMAIL"]; password=sys.stdin.readline().rstrip("\n"); obj,created=u.objects.get_or_create(email=email, defaults={"is_superuser":True,"is_staff":True,"is_active":True}); obj.is_superuser=True; obj.is_staff=True; obj.is_active=True; obj.set_password(password); obj.save(); print("Site owner ready (password hidden)")'
   unset ADMIN_PASS
 fi
 
