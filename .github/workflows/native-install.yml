@@ -1,0 +1,46 @@
+name: Native Ubuntu Install
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install-native.sh'
+      - 'install-site.sh'
+      - 'scripts/update-native.sh'
+      - 'scripts/native-env-exec.py'
+      - '.github/workflows/native-install.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run clean native installation
+        env:
+          DELTA_SETUP_DOMAIN: localhost
+          DELTA_NATIVE_TEST_MODE: "1"
+          DELTA_ADMIN_PASSWORD: ci-fixture-secret-1234567890
+        run: sudo -E bash install-native.sh
+      - name: Check native services and HTTP endpoints
+        run: |
+          sudo systemctl is-active --quiet postgresql
+          sudo systemctl is-active --quiet deltajanebi-web
+          sudo systemctl is-active --quiet deltajanebi-syncjobs
+          sudo systemctl is-active --quiet deltajanebi-reservations
+          sudo systemctl is-active --quiet caddy
+          curl -fsS --max-time 8 http://127.0.0.1:8000/health/
+          curl -kfsS --max-time 12 https://localhost/health/
+          sudo runuser -u deltajanebi -- /opt/deltajanebi/.venv/bin/python /opt/deltajanebi/scripts/native-env-exec.py /etc/deltajanebi/native.env /opt/deltajanebi/.venv/bin/python /opt/deltajanebi/scripts/check_bot_api.py
+          echo "Native stack installed and responding."
+      - name: Service diagnostics
+        if: failure()
+        run: |
+          sudo systemctl --no-pager status postgresql caddy deltajanebi-web deltajanebi-syncjobs deltajanebi-reservations || true
+          sudo journalctl --no-pager -u deltajanebi-web -u caddy -n 120 || true
+          free -h
+          df -h
