@@ -21,4 +21,46 @@ assert "getpass" in src and "api_key" in src
 assert "sudo cat" not in shell and "echo $SMTP_PASSWORD" not in shell
 assert "scripts/update-native.sh" in shell and "configure-native-email.py" in shell
 assert "fail_silently=False" in check
+# Exercise the real input path on a Linux pseudo-terminal, with the script
+# loaded exactly as the native installer does. This reproduces the SSH/piped
+# installer failure without requiring a live Resend key or sending emails.
+import os
+import pty
+import runpy
+import select
+import signal
+import time
+
+pid, master = pty.fork()
+if pid == 0:
+    try:
+        value = runpy.run_path("scripts/configure-native-email.py")["prompt"]("Verified sender email: ")
+        print("TTY_RESULT=" + value, flush=True)
+        os._exit(0)
+    except Exception as exc:
+        print("TTY_ERROR=" + repr(exc), flush=True)
+        os._exit(2)
+
+output = b""
+provided = False
+deadline = time.monotonic() + 10
+try:
+    while time.monotonic() < deadline and b"TTY_RESULT=" not in output and b"TTY_ERROR=" not in output:
+        ready, _, _ = select.select([master], [], [], 0.2)
+        if ready:
+            try:
+                output += os.read(master, 2048)
+            except OSError:
+                break
+        if not provided and b"Verified sender email: " in output:
+            os.write(master, b"support@mail.example.com\n")
+            provided = True
+    if b"TTY_RESULT=support@mail.example.com" not in output:
+        os.kill(pid, signal.SIGKILL)
+    _, status = os.waitpid(pid, 0)
+    assert os.waitstatus_to_exitcode(status) == 0, output.decode(errors="replace")
+    assert b"TTY_RESULT=support@mail.example.com" in output, output.decode(errors="replace")
+finally:
+    os.close(master)
+
 print("Native Resend repair and confidential credentials contract: OK")
