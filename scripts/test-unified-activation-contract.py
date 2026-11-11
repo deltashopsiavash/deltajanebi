@@ -8,6 +8,10 @@ assert "\\" + "${" not in activation, "Escaped shell parameters stop expansion"
 for token in ("${TELEGRAM_BOT_TOKEN:-}", "${TELEGRAM_OWNER_ID:-}"):
     assert token in activation, token
 assert 'source "$RESOLVED_ENV"' in activation
+assert 'BOT_DB_PATH="$SANA_DB"' in activation
+assert 'BOT_LOCK_PATH="$SANA_LOCK"' in activation
+assert "export TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_ID BOT_DB_PATH BOT_LOCK_PATH" in activation
+assert activation.index("export TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_ID BOT_DB_PATH BOT_LOCK_PATH") < activation.index("log \"Preflight imports"), "Python preflight must receive exported credentials"
 assert "resolve-unified-bot-config.py" in activation
 assert '[[ -s "$SANA_DB" ]]' in activation
 assert 'BOT_DB_PATH' in discovery and 'BOT_LOCK_PATH' in discovery

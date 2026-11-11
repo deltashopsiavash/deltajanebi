@@ -124,6 +124,13 @@ if [[ ! -f "/etc/systemd/system/sanashop-bot.service" && ! -f "/etc/systemd/syst
   error "No existing SanaShop/Delta Telegram bot service was found. No changes made."
 fi
 
+# The resolver creates shell variables, but non-exported variables disappear
+# when the Python subprocess imports SanaShop's external_bot.py.
+# Make Python and this service share the EXACT SAME discovered identity & DB.
+BOT_DB_PATH="$SANA_DB"
+BOT_LOCK_PATH="$SANA_LOCK"
+export TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_ID BOT_DB_PATH BOT_LOCK_PATH
+
 # Never print the token, even if troubleshooting is enabled.
 echo "Existing credentials loaded; shared database selected; values hidden."
 

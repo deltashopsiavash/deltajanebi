@@ -112,6 +112,32 @@ jobs:
         run: python bot_unified_db_regression.py
       - name: Shared bot activation environment regression
         run: python scripts/test-unified-activation-contract.py
+      - name: Import actual SanaShop module with a sourced shell-only identity
+        run: |
+          # Simulate the user's failure: credentials exist only as shell variables
+          # after reading the root-only file; they are not in the process env yet.
+          cat > /tmp/unified-credentials-ci.env <<'EOF'
+          TELEGRAM_BOT_TOKEN='123456789:CI_TOKEN_VALUE_NOT_USED_ON_NETWORK'
+          TELEGRAM_OWNER_ID='67890'
+          SANA_DB='/tmp/unified-bot-real-env-test.sqlite3'
+          SANA_LOCK='/tmp/unified-bot-real-env-test.lock'
+          EOF
+          env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_OWNER_ID -u BOT_DB_PATH -u BOT_LOCK_PATH bash -eu -c '
+            source /tmp/unified-credentials-ci.env
+            BOT_DB_PATH="$SANA_DB"
+            BOT_LOCK_PATH="$SANA_LOCK"
+            export TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_ID BOT_DB_PATH BOT_LOCK_PATH
+            DELTAJANEBI_RUNTIME_DIR=/tmp/sanashop-runtime python - <<'"'"'PY'"'"'
+          import os
+          import external_bot_delta_v16 as unified
+          import external_bot_delta_v15 as router
+          assert router.core.TOKEN == os.environ["TELEGRAM_BOT_TOKEN"]
+          assert router.core.OWNER_ID == 67890
+          assert str(router.core.DB_PATH) == "/tmp/unified-bot-real-env-test.sqlite3"
+          assert callable(unified.run)
+          print("Sourced credentials reach real SanaShop import: OK")
+          PY
+          '
       - name: Native footer flow regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
       - name: Native source controls regression
