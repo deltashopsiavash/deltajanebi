@@ -23,11 +23,17 @@ OLD_DELTA_WAS_ACTIVE=0
 UNIFIED_WAS_ACTIVE=0
 STOP_OLD_DELTA=0
 
-error() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
+error() {
+  printf '\nERROR: %s\n' "$*" >&2
+  if [[ "$ACTIVATION_STARTED" == 1 && "$ACTIVATION_SUCCESS" != 1 ]]; then
+    rollback 1
+  fi
+  exit 1
+}
 log() { printf '\n==> %s\n' "$*"; }
 
 rollback() {
-  local status="$?"
+  local status="${1:-$?}"
   trap - ERR
   if [[ "$ACTIVATION_STARTED" == 1 && "$ACTIVATION_SUCCESS" != 1 ]]; then
     echo "⚠️ Unified activation failed; restoring original SanaShop service/database." >&2
@@ -133,7 +139,7 @@ install -d -m 700 "$BACKUP_ROOT"
 BACKUP_DIR="$(mktemp -d "$BACKUP_ROOT/backup-XXXXXXXX")"
 python3 - "$SANA_DB" "$BACKUP_DIR/shared-db.sqlite3" <<'PY'
 import sqlite3, sys
-source = sqlite3.connect(f"file:\{sys.argv[1]}?mode=ro", uri=True)
+source = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 target = sqlite3.connect(sys.argv[2])
 try:
     source.backup(target)

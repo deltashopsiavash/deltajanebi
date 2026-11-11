@@ -102,6 +102,8 @@ def run():
         .build()
     )
     app.add_handler(CommandHandler("start", v15.start))
+    # Preserve SanaShop's existing /version diagnostic in the shared bot.
+    app.add_handler(CommandHandler("version", v15.sana.version_command))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CallbackQueryHandler(v15.callback))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, v15.media))

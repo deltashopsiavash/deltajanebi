@@ -32,7 +32,7 @@ jobs:
       - name: Python compile check
         run: python -m compileall -q config shop enhancements
       - name: Shell syntax check
-        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh scripts/resume-site.sh
+        run: bash -n install.sh update.sh install-site.sh update-site.sh install-bot.sh update-bot.sh scripts/build-site-image.sh scripts/site-diagnostics.sh scripts/verify-deployment.sh scripts/resume-site.sh scripts/activate-unified-bot.sh
       - name: Django system check
         run: python manage.py check --deploy --fail-level ERROR
       - name: Migration drift check
@@ -103,9 +103,11 @@ jobs:
         run: git clone --depth 1 https://github.com/deltashopsiavash/sanashop.git /tmp/sanashop-runtime
       - name: Compile native router runtime
         run: |
-          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_home_categories_v30.py delta_banner_controls_v31.py delta_help_pages_v33.py delta_site_title_v34.py delta_sync_progress_v19.py delta_sync_progress_v20.py delta_catalog_ui_v20.py bot_router_regression_v2.py bot_footer_regression.py bot_source_regression.py bot_catalog_regression_v20.py bot_banner_regression_v31.py bot_help_pages_regression_v33.py bot_site_title_regression_v34.py
+          PYTHONPATH=/tmp/sanashop-runtime python -m py_compile external_bot_delta_v15.py external_bot_delta_v16.py delta_bot_native.py delta_footer_restore.py delta_source_restore.py delta_home_categories_v30.py delta_banner_controls_v31.py delta_help_pages_v33.py delta_site_title_v34.py delta_sync_progress_v19.py delta_sync_progress_v20.py delta_catalog_ui_v20.py bot_router_regression_v2.py bot_unified_db_regression.py scripts/merge-unified-bot-db.py bot_footer_regression.py bot_source_regression.py bot_catalog_regression_v20.py bot_banner_regression_v31.py bot_help_pages_regression_v33.py bot_site_title_regression_v34.py
       - name: Mixed DB isolation and native capability contract
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
+      - name: Shared SanaShop/Delta bot database migration regression
+        run: python bot_unified_db_regression.py
       - name: Native footer flow regression
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_footer_regression.py
       - name: Native source controls regression

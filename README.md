@@ -105,3 +105,25 @@ sudo bash /opt/deltajanebi/scripts/resume-site.sh
 تمام دستورات `docker compose exec` در نصب، آپدیت، راستی‌آزمایی و بازیابی با `--interactive=false -T` اجرا می‌شوند؛ در غیر این صورت Docker Compose می‌تواند باقی متن `curl ... | bash` را از ورودی استاندارد بخواند و نصب ظاهراً بدون خطا پیش از راه‌اندازی Caddy تمام شود.
 
 اسکریپت بازیابی را می‌توان به شکل `curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/scripts/resume-site.sh | sudo bash` اجرا کرد. در CI نیز همین رفتار با `cat scripts/resume-site.sh | bash` پس از حذف کانتینرهای موقت بررسی می‌شود.
+
+## یک ربات مشترک با پنل مستقل SanaShop و DeltaJanebi
+
+این روش مخصوص حالتی است که `sanashop-bot` **از قبل روی سرور مشترک ربات فعال است** و می‌خواهید همین توکن تلگرام دو سایت را مدیریت کند. کد و Git مربوط به `deltashopsiavash/sanashop` هیچ تغییری نمی‌کند. ربات مشترک، ماژول‌های فعلی SanaShop را به‌عنوان runtime می‌خواند و فقط برای سایت‌هایی که API آنها `platform=deltajanebi` برمی‌گرداند پنل و callback اختصاصی Delta نمایش می‌دهد.
+
+**روی سرور مشترک ربات** (نه سرور سایت‌ها):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/scripts/activate-unified-bot.sh | sudo bash
+```
+
+اسکریپت پیش از تغییر سرویس‌ها از دیتابیس ربات SanaShop نسخه امن می‌گیرد، از همان توکن، صاحب، دیتابیس و lock استفاده می‌کند، اتصال‌های قدیمی Delta را (اگر دیتابیس مجزای Delta با همین توکن وجود داشته باشد) بدون حذف سایت‌های SanaShop وارد می‌کند و پس از preflight فقط یک polling service را فعال می‌کند: `deltajanebi-unified-bot`. در صورت شکست فعال‌سازی، نسخه قبلی سرویس و دیتابیس را برمی‌گرداند. اجرای مجدد همین دستور روش به‌روزرسانی همین overlay است.
+
+**مهم:** از آن پس نصب/آپدیت مستقیم ربات SanaShop روی همین سرور می‌تواند سرویس قدیمی آن را دوباره فعال و با توکن مشترک تداخل ایجاد کند؛ پس بعد از چنین آپدیتی دستور فعال‌سازی یکپارچه را مجدد اجرا کنید. هیچ‌وقت دو سرویس با یک توکن را همزمان اجرا نکنید.
+
+بررسی نسخه فعال:
+
+```bash
+systemctl status deltajanebi-unified-bot --no-pager
+```
+
+در تلگرام، `/start` → سایت‌های متصل → بازکردن سایت؛ Delta پنل بنفش مخصوص خود و SanaShop پنل گالری و گزینه‌های خودش را خواهد داشت.

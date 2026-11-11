@@ -82,10 +82,8 @@ async def detect_platform(site, persist=True):
     if platform not in {"sanashop", "deltajanebi"}:
         raise RuntimeError(f"نوع سایت پشتیبانی نمی‌شود: {platform}")
     if persist:
-        try:
-            _save_metadata(site["id"], platform, meta.get("version") or 0, meta.get("capabilities") or [])
-        except Exception:
-            pass
+        # A failed metadata write must not silently render the wrong platform UI.
+        _save_metadata(site["id"], platform, meta.get("version") or 0, meta.get("capabilities") or [])
     return platform, meta
 
 
@@ -135,7 +133,9 @@ async def start(update: Update, context):
     if not site:
         return await update.message.reply_text("⛔️ شما مجاز به استفاده از ربات نمی‌باشید.")
     try:
-        await ensure_platform(site)
+        # Always refresh type for assigned admins; old bots stored no platform,
+        # and a formerly Sana-only database may contain a Delta connection.
+        await detect_platform(site, persist=True)
         site = core.get_site(site["id"])
         return await show_site(update.message, site, uid, edit=False)
     except Exception as exc:
@@ -217,6 +217,21 @@ async def callback(update: Update, context):
             )
 
     if data.startswith("d:"):
+        # Delta buttons are accepted only for an authenticated Delta site ID.
+        # A SanaShop site must never invoke Delta-only API calls, even with
+        # an old/forged Telegram callback.
+        segments = data.split(":")
+        if len(segments) < 3 or not segments[2].isdigit():
+            return await q.answer("دکمه نامعتبر است.", show_alert=True)
+        delta_site = core.get_site(int(segments[2]))
+        if not delta_site or not core.can_access(uid, delta_site["id"]):
+            return await q.answer("عدم دسترسی به این سایت", show_alert=True)
+        try:
+            platform = await ensure_platform(delta_site)
+        except Exception as exc:
+            return await q.answer(f"ارتباط با API سایت ناموفق بود: {str(exc)[:80]}", show_alert=True)
+        if platform != "deltajanebi":
+            return await q.answer("این دکمه متعلق به سایت Delta نیست.", show_alert=True)
         return await delta.callback(update, context)
 
     site = _site_from_callback(uid, data)

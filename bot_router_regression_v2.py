@@ -87,6 +87,37 @@ async def check_routing(sana_site, delta_site):
         router.sana.callback = original
 
 
+async def check_open_site_platform_detection(sana_site, delta_site):
+    # Simulate the exact user case: sites previously connected via Sana-only
+    # database with missing/wrong platform metadata, but each has its own key.
+    original_api = core.api
+
+    async def mocked_api(site, action, payload=None, timeout=30):
+        assert action == "ping" and site["api_key"] in ("ci-sana-key", "ci-delta-key")
+        platform = "deltajanebi" if site["api_key"] == "ci-delta-key" else "sanashop"
+        return {"ok": True, "site": {"platform": platform, "name": platform, "version": 16}}
+
+    core.api = mocked_api
+    try:
+        with router.ensure_schema() as c:
+            c.execute("UPDATE sites SET platform='sanashop' WHERE id=?", (delta_site["id"],))
+            c.commit()
+        u = Update(f"open_site:{delta_site['id']}")
+        await router.callback(u, Context())
+        markup = u.callback_query.edits[-1][1]
+        assert "👥 کاربران و کیف پول" in labels(markup)
+        assert "🖼 گالری تصاویر محصولات" not in labels(markup)
+        assert router.platform_of(core.get_site(delta_site["id"])) == "deltajanebi"
+
+        u = Update(f"open_site:{sana_site['id']}")
+        await router.callback(u, Context())
+        markup = u.callback_query.edits[-1][1]
+        assert "🖼 گالری تصاویر محصولات" in labels(markup)
+        assert "👥 کاربران و کیف پول" not in labels(markup)
+    finally:
+        core.api = original_api
+
+
 def check_native_contract():
     source = Path("delta_bot_native.py").read_text(encoding="utf-8")
     required = [
@@ -114,6 +145,7 @@ def main():
     assert sana_labels != delta_labels
     check_native_contract()
     asyncio.run(check_routing(sana_site, delta_site))
+    asyncio.run(check_open_site_platform_detection(sana_site, delta_site))
     print("Mixed DB router isolation: OK")
     print("Native Delta flow contract: OK")
 
