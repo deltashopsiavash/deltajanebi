@@ -205,6 +205,13 @@ if ! "$APP_DIR/.venv/bin/python" -m pip install --no-cache-dir --prefer-binary -
     -i https://pypi.org/simple/ -r "$APP_DIR/requirements.txt"
 fi
 
+log "Granting the unprivileged Django user READ+TRAVERSE (not write) access to the code and Python packages"
+# Ubuntu root installations use umask 027. Without these permissions,
+# Python binary modules (for example PIL/_imaging.so) fail to import:
+# ImportError: cannot open shared object file: Permission denied
+chgrp -R "$APP_USER" "$APP_DIR"
+chmod -R g+rX "$APP_DIR"
+
 log "Preparing private configuration, media, static and backup folders"
 # Make the private directory traversable by the Django service user.
 chown root:"$APP_USER" /etc/deltajanebi

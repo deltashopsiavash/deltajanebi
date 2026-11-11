@@ -17,6 +17,7 @@ for required in (
     'email=os.environ["DJANGO_ADMIN_EMAIL"]',
     "run_django collectstatic --noinput", "run_django migrate --noinput",
     "systemctl is-active --quiet", "native-env-exec.py",
+    'chgrp -R "$APP_USER" "$APP_DIR"', 'chmod -R g+rX "$APP_DIR"',
 ):
     assert required in installer, required
 for forbidden in ("docker compose", "docker buildx", "docker run", "docker rm",
@@ -26,5 +27,6 @@ assert "install-native.sh" in initial and "DELTA_INSTALL_MODE" in initial
 assert "scripts/update-native.sh" in update
 assert "docker compose" not in updater
 assert "pg_dump -Fc deltajanebi" in updater
+assert 'chmod -R g+rX "$APP_DIR"' in updater
 assert "os.execvpe" in Path("scripts/native-env-exec.py").read_text()
 print("Native installer/upgrade isolation and low-memory contracts: OK")

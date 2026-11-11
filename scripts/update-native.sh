@@ -36,6 +36,10 @@ log "Installing pinned Python dependencies without Docker"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 "$APP_DIR/.venv/bin/python" -m pip install --no-cache-dir --prefer-binary --timeout 25 --retries 1 -r requirements.txt
 
+log "Restoring app-user read access after root-owned pip and Git updates"
+chgrp -R "$APP_USER" "$APP_DIR"
+chmod -R g+rX "$APP_DIR"
+
 log "Django migration, static files and configuration checks"
 run_app(){
   runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
