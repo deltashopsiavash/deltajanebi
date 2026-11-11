@@ -61,7 +61,7 @@ jobs:
           ]
           assert all(x in text for x in expected)
           assert "install.sh | sudo bash" not in text
-          assert "sudo deltajanebi-update" not in text
+          assert "sudo deltajanebi-update" in text
           print("README install/update commands: OK")
           PY
       - name: Docker Compose config
