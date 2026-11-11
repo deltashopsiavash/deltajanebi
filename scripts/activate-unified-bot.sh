@@ -75,36 +75,15 @@ PY
 trap rollback ERR
 
 [[ $EUID -eq 0 ]] || error "Run as root via sudo."
-[[ -r "$SANA_ENV" ]] || error "$SANA_ENV missing; this command is for the EXISTING shared SanaShop bot server only."
 [[ -x "$SANA_DIR/.venv/bin/python" ]] || error "SanaShop virtual environment missing: $SANA_DIR/.venv"
 [[ -f "$SANA_DIR/external_bot_v16.py" ]] || error "SanaShop v16 code missing; no changes made."
 command -v git >/dev/null || error "git missing."
 command -v python3 >/dev/null || error "Python 3 missing."
 command -v systemctl >/dev/null || error "systemd missing."
 
-# Read the existing SanaShop token, owner and DB without displaying secrets.
-set -a
-# shellcheck disable=SC1090
-source "$SANA_ENV"
-set +a
-[[ -n "${TELEGRAM_BOT_TOKEN:-}" && "${TELEGRAM_OWNER_ID:-}" =~ ^[0-9]+$ ]] ||
-  error "SanaShop bot token or numeric owner ID is missing."
-SANA_DB="${BOT_DB_PATH:-/var/lib/sanashop-bot/bot.sqlite3}"
-SANA_LOCK="${BOT_LOCK_PATH:-/var/lib/sanashop-bot/runtime.lock}"
-[[ -s "$SANA_DB" ]] || error "Existing SanaShop DB is missing/empty: $SANA_DB. Refusing to create a fresh DB."
-[[ -f "/etc/systemd/system/sanashop-bot.service" ]] ||
-  error "Existing sanashop-bot.service was not found; inspect installation before migration."
-
-# Only stop/migrate an old standalone Delta service if it uses the SAME token.
-if [[ -r "$OLD_DELTA_ENV" ]]; then
-  LEGACY_TOKEN="$( (unset TELEGRAM_BOT_TOKEN BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${TELEGRAM_BOT_TOKEN:-}") )"
-  if [[ "$LEGACY_TOKEN" == "$TELEGRAM_BOT_TOKEN" ]]; then
-    STOP_OLD_DELTA=1
-    OLD_DELTA_DB="$( (unset BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${BOT_DB_PATH:-/var/lib/deltajanebi-bot/bot.sqlite3}") )"
-  fi
-fi
-if [[ "$STOP_OLD_DELTA" == 0 ]]; then OLD_DELTA_DB=""; fi
-
+# The old script required a complete /etc/sanashop-bot.env, but older
+# servers may store a shared bot identity in the running service or Delta env.
+# Fetch Delta code first; no services, site files or DBs are touched yet.
 log "Fetching Delta router only; SanaShop repository will NOT be touched"
 if [[ -d "$DELTA_DIR/.git" ]]; then
   git -C "$DELTA_DIR" fetch --prune origin main
@@ -115,6 +94,48 @@ else
   git clone --depth 1 "$DELTA_REPO" "$DELTA_DIR"
 fi
 [[ -f "$DELTA_DIR/scripts/merge-unified-bot-db.py" ]] || error "Migration script missing."
+
+log "Finding the existing Telegram bot token, owner and shared database"
+RESOLVED_ENV="$(mktemp /tmp/deltajanebi-credentials.XXXXXXXX)"
+chmod 600 "$RESOLVED_ENV"
+trap 'rm -f "$RESOLVED_ENV"' EXIT
+python3 "$DELTA_DIR/scripts/resolve-unified-bot-config.py" --output "$RESOLVED_ENV"
+# This private file contains only Python shell-quoted assignments.
+# shellcheck disable=SC1090
+source "$RESOLVED_ENV"
+rm -f "$RESOLVED_ENV"
+trap - EXIT
+
+if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+  [[ -r /dev/tty ]] || error "Existing Telegram bot token missing and no interactive TTY is available."
+  printf '\nExisting Telegram bot token was not stored in known service configs.\n' >/dev/tty
+  read -r -s -p "Paste the SAME current Telegram bot token (hidden): " TELEGRAM_BOT_TOKEN </dev/tty
+  printf '\n' >/dev/tty
+fi
+if [[ ! "${TELEGRAM_OWNER_ID:-}" =~ ^[0-9]+$ ]]; then
+  [[ -r /dev/tty ]] || error "Existing numeric Telegram owner ID missing and no interactive TTY is available."
+  read -r -p "Enter the SAME numeric owner Telegram ID: " TELEGRAM_OWNER_ID </dev/tty
+fi
+[[ "$TELEGRAM_BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{20,}$ && "$TELEGRAM_OWNER_ID" =~ ^[0-9]+$ ]] ||
+  error "The existing bot token or numeric owner ID is invalid; no service or database was changed."
+
+[[ -s "$SANA_DB" ]] || error "Existing shared DB not available: $SANA_DB. Refusing to create a blank DB."
+if [[ ! -f "/etc/systemd/system/sanashop-bot.service" && ! -f "/etc/systemd/system/deltajanebi-bot.service" && ! -f "/etc/systemd/system/deltajanebi-unified-bot.service" ]]; then
+  error "No existing SanaShop/Delta Telegram bot service was found. No changes made."
+fi
+
+# Never print the token, even if troubleshooting is enabled.
+echo "Existing credentials loaded; shared database selected; values hidden."
+
+# Only stop/migrate an old standalone Delta service if it uses the SAME token.
+if [[ -r "$OLD_DELTA_ENV" ]]; then
+  LEGACY_TOKEN="$( (unset TELEGRAM_BOT_TOKEN BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${TELEGRAM_BOT_TOKEN:-}") )"
+  if [[ "$LEGACY_TOKEN" == "$TELEGRAM_BOT_TOKEN" ]]; then
+    STOP_OLD_DELTA=1
+    OLD_DELTA_DB="$( (unset BOT_DB_PATH; source "$OLD_DELTA_ENV"; printf '%s' "${BOT_DB_PATH:-/var/lib/deltajanebi-bot/bot.sqlite3}") )"
+  fi
+fi
+if [[ "$STOP_OLD_DELTA" == 0 ]]; then OLD_DELTA_DB=""; fi
 
 log "Preflight imports using the existing SanaShop Python runtime"
 cd "$DELTA_DIR"
