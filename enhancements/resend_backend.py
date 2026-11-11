@@ -46,8 +46,11 @@ class ResendEmailBackend(BaseEmailBackend):
             "text": message.body or "",
         }
         for alt in getattr(message, "alternatives", []):
-            if alt.mimetype == "text/html":
-                data["html"] = alt.content
+            # Django 5.1 stores alternatives as (body, mime) tuples; newer
+            # versions may expose namedtuple content/mimetype attributes.
+            content, mime = alt
+            if mime == "text/html":
+                data["html"] = content
                 break
         if message.reply_to:
             data["reply_to"] = list(message.reply_to)
