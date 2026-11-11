@@ -7,7 +7,7 @@ set -Eeuo pipefail
   exit 1
 }
 recipient="${1:-}"
-if [[ ! "$recipient" =~ ^[^[:space:]@<>]+@[^[:space:]@<>]+\.[A-Za-z]{2,}$ ]]; then
+if [[ ! "$recipient" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
   echo "ERROR: Give a valid recipient email address as the only argument." >&2
   exit 1
 fi
