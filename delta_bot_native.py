@@ -455,7 +455,19 @@ async def callback(update, context):
         if cmd == "backupinterval":
             _flow(context, "d_backup_interval", sid); await _edit(q, "فاصله بکاپ خودکار را به دقیقه بفرست؛ حداقل 5، برای خاموش 0:"); return True
         if cmd == "backuprestore":
-            _flow(context, "d_backup_restore", sid); await _edit(q, "فایل .deltabackup را به‌صورت Document بفرست:"); return True
+            _flow(context, "d_backup_restore", sid)
+            web_url = site["base_url"].rstrip("/") + "/admin/delta-restore/"
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 بارگذاری بکاپ حجیم در سایت", url=web_url)],
+                [InlineKeyboardButton("⬅️ بکاپ", callback_data=f"d:backup:{sid}")],
+            ])
+            await _edit(q,
+                "♻️ بازگردانی بکاپ DeltaJanebi\n\n"
+                "📎 اگر حجم فایل حداکثر ۲۰ مگابایت است، همین‌جا به‌صورت Document بفرست.\n\n"
+                "🌐 برای فایل‌های بزرگ‌تر روی دکمه بارگذاری در سایت بزن، با حساب مدیر اصلی سایت وارد شو "
+                "و فایل را مستقیم از مرورگر آپلود کن.",
+                kb)
+            return True
         if cmd == "backuprestoreconfirm":
             path = Path(context.user_data.get("restore_path", ""))
             if not path.is_file():
@@ -753,8 +765,20 @@ async def media(update, context):
             doc = update.message.document
             if not doc or not (doc.file_name or "").lower().endswith(".deltabackup"):
                 await update.message.reply_text("فقط فایل .deltabackup بفرست."); return True
+            if doc.file_size and doc.file_size > 20 * 1024 * 1024:
+                await update.message.reply_text(
+                    "⚠️ این بکاپ بیش از ۲۰ مگابایت است؛ تلگرام اجازه دانلود آن را به ربات نمی‌دهد. "
+                    "لطفاً همان فایل را از دکمه زیر مستقیم در سایت بارگذاری کن.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🌐 بارگذاری بکاپ حجیم", url=site["base_url"].rstrip("/") + "/admin/delta-restore/")
+                    ]]))
+                return True
             handle = tempfile.NamedTemporaryFile(prefix="delta-restore-", suffix=".deltabackup", delete=False); handle.close(); path = Path(handle.name)
-            tg = await doc.get_file(); await tg.download_to_drive(custom_path=str(path))
+            try:
+                tg = await doc.get_file(); await tg.download_to_drive(custom_path=str(path))
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
             context.user_data.update(flow="d_backup_restore_confirm", restore_path=str(path))
             await update.message.reply_text("⚠️ دیتابیس و media فعلی با بکاپ جایگزین شوند؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید بازگردانی", callback_data=f"d:backuprestoreconfirm:{sid}"), InlineKeyboardButton("❌ لغو", callback_data=f"d:backup:{sid}")]])); return True
     except Exception as exc:

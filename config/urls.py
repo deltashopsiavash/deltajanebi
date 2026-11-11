@@ -1,10 +1,12 @@
 from django.contrib import admin
+from enhancements.admin_backup_restore import delta_backup_restore_admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from shop import views
 
 urlpatterns = [
+    path("admin/delta-restore/", delta_backup_restore_admin, name="delta_backup_restore_admin"),
     path("admin/", admin.site.urls),
     path("health/", views.health, name="health"),
     path("", include("shop.urls")),

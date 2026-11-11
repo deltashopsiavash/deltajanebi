@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<section dir="rtl" style="max-width:760px;margin:30px auto;line-height:2">
+  <h1>♻️ بازگردانی بکاپ کامل DeltaJanebi</h1>
+  <p>فایل را مستقیم از مرورگر بارگذاری کن؛ این روش محدودیت دانلود ۲۰ مگابایتی ربات تلگرام را ندارد.</p>
+  {% if error %}<p style="border:1px solid #b33;padding:12px" role="alert">❌ {{ error }}</p>{% endif %}
+  {% if success %}
+    <p role="status">✅ بکاپ با موفقیت بازگردانی شد.</p>
+    <p>تاریخ بکاپ: {{ created_at }}</p>
+    <p>بکاپ اضطراری اطلاعات قبلی روی سرور نگه داشته شد: <strong>{{ emergency_name }}</strong></p>
+    <p><a href="/">بازگشت به سایت</a></p>
+  {% else %}
+    <p style="border:1px solid #b80;padding:12px">⚠️ این عملیات تمام کاربران، محصولات، سفارش‌ها، تنظیمات دیتابیس و فایل‌های رسانه‌ای فعلی سایت را با اطلاعات بکاپ جایگزین می‌کند.</p>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <p><label for="file">فایل .deltabackup (حداکثر {{ max_mb }} مگابایت)</label><br>
+      <input id="file" name="backup_file" type="file" accept=".deltabackup" required></p>
+      <p><label><input type="checkbox" name="confirm_restore" value="yes" required>
+       تأیید می‌کنم اطلاعات فعلی این سایت با این بکاپ جایگزین شود.</label></p>
+      <button class="default" type="submit">تأیید نهایی و بازگردانی بکاپ</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}
