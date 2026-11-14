@@ -2,6 +2,8 @@
 import base64
 import io
 import re
+from html.parser import HTMLParser
+from urllib.parse import urlsplit
 import tempfile
 from pathlib import Path
 
@@ -9,6 +11,43 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import external_bot as core
 import external_bot_plus as plus
+
+
+class _EnamadHtmlParser(HTMLParser):
+    """Extract official eNamad URLs, not arbitrary HTML."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.target_url = ""
+        self.image_url = ""
+
+    def handle_starttag(self, tag, attrs):
+        props = dict(attrs)
+        if tag == "a" and props.get("href"):
+            self.target_url = props["href"].strip()
+        elif tag == "img" and props.get("src"):
+            self.image_url = props["src"].strip()
+
+
+def _enamad_urls_from_html(snippet):
+    """Turn pasted trustseal HTML into safe separate image and target URLs."""
+    if len(snippet) > 12000:
+        raise ValueError("کد HTML نماد بیش از حد طولانی است.")
+    parser = _EnamadHtmlParser()
+    parser.feed(snippet)
+    parser.close()
+    if not parser.target_url or not parser.image_url:
+        raise ValueError("کد کامل اینماد باید شامل تگ‌های a و img باشد.")
+    for url in (parser.target_url, parser.image_url):
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or parsed.hostname != "trustseal.enamad.ir" or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("لینک تصویر و مقصد باید HTTPS و متعلق به trustseal.enamad.ir باشند.")
+        if parsed.port not in (None, 443):
+            raise ValueError("پورت لینک اینماد معتبر نیست.")
+    if not urlsplit(parser.image_url).path.lower().endswith("/logo.aspx"):
+        raise ValueError("لینک تصویر لوگوی رسمی اینماد معتبر نیست.")
+    return {"image_url": parser.image_url, "target_url": parser.target_url}
+
 
 MAX_FILE = 48 * 1024 * 1024
 PLATFORMS = [("instagram", "اینستاگرام"), ("telegram", "تلگرام"), ("whatsapp", "واتساپ"), ("rubika", "روبیکا"), ("eitaa", "ایتا"), ("youtube", "یوتیوب"), ("aparat", "آپارات"), ("x", "ایکس"), ("facebook", "فیسبوک"), ("other", "سایر")]
@@ -382,7 +421,7 @@ async def callback(update, context):
             keys = [[InlineKeyboardButton(f"🛡 اینماد {'✅' if 'enamad' in by else '❌'}", callback_data=f"d:badge:{sid}:enamad"), InlineKeyboardButton(f"💳 زرین‌پال {'✅' if 'zarinpal' in by else '❌'}", callback_data=f"d:badge:{sid}:zarinpal")], [InlineKeyboardButton("⬅️ تنظیمات", callback_data=f"d:settings:{sid}")]]
             await _edit(q, "🛡 نمادهای اعتماد", InlineKeyboardMarkup(keys)); return True
         if cmd == "badge":
-            _flow(context, "d_badge_image", sid, badge_type=parts[3]); await _edit(q, "عکس نماد را بفرست؛ عکس/فایل، لینک http/https یا - برای حذف:"); return True
+            _flow(context, "d_badge_image", sid, badge_type=parts[3]); await _edit(q, "اینماد: کد HTML کامل اینماد را یکجا کپی کن، یا لینک تصویر (src) را بفرست و سپس مقصد (href) را وارد کن.\nزرین‌پال: عکس/فایل یا لینک تصویر.\nبرای حذف - بفرست."); return True
         if cmd == "banners":
             rows = (await core.api(site, "banners"))["data"]; keys = []
             for x in rows:
@@ -682,6 +721,15 @@ async def message(update, context):
             kind = context.user_data["badge_type"]
             if text == "-":
                 await core.api(site, "delta_badge_remove", {"badge_type": kind}); context.user_data.clear(); await update.message.reply_text("✅ نماد حذف شد.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛡 نمادها", callback_data=f"d:badges:{sid}")]])); return True
+            if kind == "enamad" and "<" in text and ">" in text:
+                try:
+                    badge = _enamad_urls_from_html(text)
+                except (ValueError, TypeError) as exc:
+                    await update.message.reply_text(f"❌ کد HTML اینماد معتبر نیست: {exc}"); return True
+                await core.api(site, "delta_badge_set", {"badge_type": "enamad", **badge})
+                context.user_data.clear()
+                await update.message.reply_text("✅ کد رسمی اینماد ثبت شد. تصویر و لینک مقصد روی سایت نمایش داده می‌شوند.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛡 نمادها", callback_data=f"d:badges:{sid}")]]))
+                return True
             if re.match(r"^https?://", text, re.I):
                 context.user_data.update(flow="d_badge_target", badge_image_url=text); await update.message.reply_text("لینک مقصد نماد را بفرست؛ - برای بدون لینک:"); return True
             await update.message.reply_text("عکس/فایل، لینک یا - بفرست."); return True

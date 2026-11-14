@@ -116,6 +116,8 @@ jobs:
         run: PYTHONPATH=/tmp/sanashop-runtime python bot_router_regression_v2.py
       - name: Resolve existing bot identity without exposing credentials
         run: python bot_unified_config_regression.py
+      - name: eNamad HTML pasted in Delta bot regression
+        run: PYTHONPATH=/tmp/sanashop-runtime python bot_enamad_html_regression.py
       - name: Shared SanaShop/Delta bot database migration regression
         run: python bot_unified_db_regression.py
       - name: Shared bot activation environment regression

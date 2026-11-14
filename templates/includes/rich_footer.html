@@ -38,7 +38,7 @@
     {% if help_pages %}{% include 'includes/help_footer.html' %}{% endif %}
 
     <section class="trust-row" aria-label="نمادهای اعتماد">
-      {% if enamad_badge and enamad_badge.image_src %}{% if enamad_badge.target_url %}<a class="trust-card" href="{{ enamad_badge.target_url }}" target="_blank" rel="noopener">{% else %}<div class="trust-card">{% endif %}<img src="{{ enamad_badge.image_src }}" alt="اینماد">{% if enamad_badge.target_url %}</a>{% else %}</div>{% endif %}{% else %}<div class="trust-card trust-placeholder"><strong>اینماد</strong><span>هنوز ثبت نشده</span></div>{% endif %}
+      {% if enamad_badge and enamad_badge.image_src %}{% if enamad_badge.target_url %}<a class="trust-card" href="{{ enamad_badge.target_url }}" target="_blank" referrerpolicy="origin">{% else %}<div class="trust-card">{% endif %}<img src="{{ enamad_badge.image_src }}" alt="اینماد" referrerpolicy="origin">{% if enamad_badge.target_url %}</a>{% else %}</div>{% endif %}{% else %}<div class="trust-card trust-placeholder"><strong>اینماد</strong><span>هنوز ثبت نشده</span></div>{% endif %}
       {% if zarinpal_badge and zarinpal_badge.image_src %}{% if zarinpal_badge.target_url %}<a class="trust-card" href="{{ zarinpal_badge.target_url }}" target="_blank" rel="noopener">{% else %}<div class="trust-card">{% endif %}<img src="{{ zarinpal_badge.image_src }}" alt="زرین‌پال">{% if zarinpal_badge.target_url %}</a>{% else %}</div>{% endif %}{% else %}<div class="trust-card trust-placeholder"><strong>زرین‌پال</strong><span>هنوز ثبت نشده</span></div>{% endif %}
     </section>
 
