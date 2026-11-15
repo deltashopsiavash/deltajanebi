@@ -404,7 +404,7 @@ chmod 600 /root/deltajanebi-bot-api-key.txt
 
 cat >/usr/local/bin/deltajanebi-update <<'EOF'
 #!/usr/bin/env bash
-# Local-first updater: raw.githubusercontent.com is commonly blocked on Iran VPS.
+# Local-first updater: no external script download at runtime.
 set -Eeuo pipefail
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "Run as root/sudo." >&2; exit 1; }
 LOCAL_UPDATER=/opt/deltajanebi/scripts/update-native.sh
