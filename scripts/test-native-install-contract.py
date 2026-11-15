@@ -29,4 +29,11 @@ assert "docker compose" not in updater
 assert "pg_dump -Fc deltajanebi" in updater
 assert 'chmod -R g+rX "$APP_DIR"' in updater
 assert "os.execvpe" in Path("scripts/native-env-exec.py").read_text()
+# The native launcher must be completely independent of raw.githubusercontent.com.
+assert "raw.githubusercontent.com" not in installer.split("cat >/usr/local/bin/deltajanebi-update <<'EOF'", 1)[1].split("\nEOF", 1)[0]
+assert 'LOCAL_UPDATER=/opt/deltajanebi/scripts/update-native.sh' in installer
+assert 'LOCAL_UPDATER=/opt/deltajanebi/scripts/update-native.sh' in updater
+assert 'cp "$LOCAL_UPDATER" "$TMP_UPDATER"' in updater
+assert 'mktemp /tmp/deltajanebi-native-updater.' in installer
+
 print("Native installer/upgrade isolation and low-memory contracts: OK")

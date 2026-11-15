@@ -71,6 +71,23 @@ systemctl is-active --quiet deltajanebi-syncjobs || fail "Sync job supervisor no
 systemctl is-active --quiet deltajanebi-reservations || fail "Reservation worker not running"
 systemctl is-active --quiet caddy || fail "Caddy not running"
 
+# Repair older native installations whose launcher still downloads
+# update-site.sh from raw.githubusercontent.com. The installed updater itself
+# only requires GitHub git transport, not the GitHub Raw domain.
+log "Installing a local-first deltajanebi-update launcher (GitHub Raw not required)"
+cat >/usr/local/bin/deltajanebi-update <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "Run as root/sudo." >&2; exit 1; }
+LOCAL_UPDATER=/opt/deltajanebi/scripts/update-native.sh
+[[ -r "$LOCAL_UPDATER" ]] || { echo "Native updater missing: $LOCAL_UPDATER" >&2; exit 1; }
+TMP_UPDATER="$(mktemp /tmp/deltajanebi-native-updater.XXXXXXXX)"
+trap 'rm -f "$TMP_UPDATER"' EXIT
+cp "$LOCAL_UPDATER" "$TMP_UPDATER"
+bash "$TMP_UPDATER"
+EOF
+chmod 755 /usr/local/bin/deltajanebi-update
+
 log "Updated native DeltaJanebi successfully. Docker not used."
 printf 'Website: https://%s\n' "$DOMAIN_NOW"
 printf 'Bot key file: /root/deltajanebi-bot-api-key.txt (content hidden)\n'

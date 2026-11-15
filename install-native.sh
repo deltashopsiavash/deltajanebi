@@ -404,8 +404,17 @@ chmod 600 /root/deltajanebi-bot-api-key.txt
 
 cat >/usr/local/bin/deltajanebi-update <<'EOF'
 #!/usr/bin/env bash
+# Local-first updater: raw.githubusercontent.com is commonly blocked on Iran VPS.
 set -Eeuo pipefail
-curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/update-site.sh | sudo bash
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || { echo "Run as root/sudo." >&2; exit 1; }
+LOCAL_UPDATER=/opt/deltajanebi/scripts/update-native.sh
+[[ -r "$LOCAL_UPDATER" ]] || { echo "Native updater missing: $LOCAL_UPDATER" >&2; exit 1; }
+# Execute a private copy: git reset may update the working-tree shell script
+# while the updater is still running.
+TMP_UPDATER="$(mktemp /tmp/deltajanebi-native-updater.XXXXXXXX)"
+trap 'rm -f "$TMP_UPDATER"' EXIT
+cp "$LOCAL_UPDATER" "$TMP_UPDATER"
+bash "$TMP_UPDATER"
 EOF
 chmod 755 /usr/local/bin/deltajanebi-update
 

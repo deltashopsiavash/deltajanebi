@@ -8,7 +8,7 @@
 curl -fsSL https://raw.githubusercontent.com/deltashopsiavash/deltajanebi/main/install-site.sh | sudo bash
 ```
 
-در نصب تازه Docker وجود ندارد: PostgreSQL محلی + Gunicorn کم‌مصرف + Caddy/HTTPS و سرویس‌های systemd. روی VPS کم‌رم یک Swap دوگیگابایتی ساخته می‌شود. Sync دستی فعال و Sync دوره‌ای سنگین به‌طور پیش‌فرض خاموش است؛ برای روشن‌کردن آن پس از ارتقای RAM: `sudo systemctl enable --now deltajanebi-auto-sync`. آپدیت: `sudo deltajanebi-update`. نصب‌های موجود Docker به همان مسیر قدیمی می‌مانند.
+در نصب تازه Docker وجود ندارد: PostgreSQL محلی + Gunicorn کم‌مصرف + Caddy/HTTPS و سرویس‌های systemd. روی VPS کم‌رم یک Swap دوگیگابایتی ساخته می‌شود. Sync دستی فعال و Sync دوره‌ای سنگین به‌طور پیش‌فرض خاموش است؛ برای روشن‌کردن آن پس از ارتقای RAM: `sudo systemctl enable --now deltajanebi-auto-sync`. آپدیت: `sudo deltajanebi-update` (از اسکریپت محلی استفاده می‌کند و به `raw.githubusercontent.com` نیازی ندارد). برای تعمیر نصب‌های قدیمی، یک بار `sudo bash /opt/deltajanebi/scripts/update-native.sh` را اجرا کنید؛ این کار لانچر محلی را هم اصلاح می‌کند. دریافت کد جدید همچنان به دسترسی `git` به GitHub نیاز دارد. نصب‌های موجود Docker به همان مسیر قدیمی می‌مانند.
 
 کلید API برای اتصال مجدد ربات مشترک در `/root/deltajanebi-bot-api-key.txt` ذخیره می‌شود. برای HTTPS عمومی، DNS باید به آی‌پی سرور اشاره کند و پورت‌های ۸۰ و ۴۴۳ باز باشند.
 
