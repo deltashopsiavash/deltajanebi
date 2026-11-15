@@ -20,9 +20,13 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 import external_bot_delta_v15 as v15
+import delta_sana_tls_compat
 import delta_footer_restore
 
 core = v15.core
+# Route ONLY veloraaccessorie.ir's API traffic over verified TLS 1.2.
+# Other sites use the unchanged SanaShop and DeltaJanebi HTTP transports.
+delta_sana_tls_compat.install(core)
 
 # Install restorations in a deliberate chain. Every module intercepts only its
 # own Delta callbacks and delegates everything else to the previous layer.
