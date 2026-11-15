@@ -120,6 +120,41 @@ async def check_open_site_platform_detection(sana_site, delta_site):
         core.api = original_api
 
 
+
+async def check_sana_settings_routes_to_sana_only(sana_site):
+    """Critical regression: SanaShop settings must not be intercepted by Delta."""
+    original_api = core.api
+    original_delta_callback = router.delta.callback
+    calls = []
+    async def mock_api(site, action, payload=None, timeout=30):
+        calls.append((site["id"], action))
+        if action == "settings_get":
+            return {"ok": True, "data": {
+                "site_name": "Sana test", "announcement": "Hi",
+                "shipping_fee": 0, "free_shipping_threshold": 0,
+                "has_logo": False, "has_terms": True,
+                "has_contact_phone": False, "contact_phone": "",
+                "payment_mode": "card",
+            }}
+        raise AssertionError(f"Unexpected SanaShop action: {action}")
+    async def fail_delta(update, context):
+        raise AssertionError("SanaShop settings were intercepted by Delta!")
+    core.api = mock_api
+    router.delta.callback = fail_delta
+    try:
+        u = Update(f"settings:{sana_site['id']}")
+        await router.callback(u, Context())
+        assert calls == [(sana_site["id"], "settings_get")], calls
+        outputs = u.callback_query.edits + u.callback_query.message.replies
+        assert outputs, "SanaShop settings callback returned no visible response"
+        assert "⚙️ تنظیمات فروشگاه Sana test" in outputs[-1][0], outputs[-1][0]
+        markup = outputs[-1][1]
+        assert any("قوانین و مقررات" in label for label in labels(markup)), labels(markup)
+    finally:
+        core.api = original_api
+        router.delta.callback = original_delta_callback
+
+
 def check_native_contract():
     source = Path("delta_bot_native.py").read_text(encoding="utf-8")
     required = [
@@ -148,6 +183,7 @@ def main():
     check_native_contract()
     asyncio.run(check_routing(sana_site, delta_site))
     asyncio.run(check_open_site_platform_detection(sana_site, delta_site))
+    asyncio.run(check_sana_settings_routes_to_sana_only(sana_site))
     print("Mixed DB router isolation: OK")
     print("Native Delta flow contract: OK")
 
