@@ -17,6 +17,7 @@ from bot_resilience import resilient_notification_loop
 from bot_single_instance import acquire_single_instance_lock
 
 import delta_bot_native as delta
+import develop_bot_native as develop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("deltajanebi.multisite.v15")
@@ -46,11 +47,16 @@ def platform_of(site):
         value = str(site["platform"] or "unknown").strip().lower()
     except Exception:
         value = "unknown"
-    return value if value in {"sanashop", "deltajanebi"} else "unknown"
+    return value if value in {"sanashop", "deltajanebi", "deltadevelop"} else "unknown"
 
 
 def routed_site_panel(site, uid):
-    return delta.panel(site, uid) if platform_of(site) == "deltajanebi" else SANA_PANEL(site, uid)
+    platform = platform_of(site)
+    if platform == "deltajanebi":
+        return delta.panel(site, uid)
+    if platform == "deltadevelop":
+        return develop.panel(site, uid)
+    return SANA_PANEL(site, uid)
 
 
 core.site_panel = routed_site_panel
@@ -79,7 +85,7 @@ async def detect_platform(site, persist=True):
     info = await core.api(site, "ping", timeout=30)
     meta = info.get("site") or {}
     platform = str(meta.get("platform") or "sanashop").strip().lower()
-    if platform not in {"sanashop", "deltajanebi"}:
+    if platform not in {"sanashop", "deltajanebi", "deltadevelop"}:
         raise RuntimeError(f"نوع سایت پشتیبانی نمی‌شود: {platform}")
     if persist:
         # A failed metadata write must not silently render the wrong platform UI.
@@ -109,7 +115,7 @@ def _site_from_callback(uid, data):
 
 async def show_site(target, site, uid, edit=True):
     platform = await ensure_platform(site)
-    label = "DeltaJanebi" if platform == "deltajanebi" else "SanaShop"
+    label = {"deltajanebi": "DeltaJanebi", "deltadevelop": "DeltaDevelop"}.get(platform, "SanaShop")
     text = f"🏪 {site['name']}\n🌐 {site['base_url']}\n🧩 مدیریت اختصاصی: {label}"
     fresh = core.get_site(site["id"])
     if edit:
@@ -156,7 +162,7 @@ async def _owner_sites(q, uid):
     keys = []
     for s in sites:
         p = platform_of(s)
-        badge = "🟣 Delta" if p == "deltajanebi" else ("💎 Sana" if p == "sanashop" else "❔")
+        badge = {"deltajanebi": "🟣 Delta", "deltadevelop": "💻 Develop", "sanashop": "💎 Sana"}.get(p, "❔")
         keys.append([InlineKeyboardButton(f"{badge} | {s['name']}", callback_data=f"open_site:{s['id']}")])
     keys += [
         [InlineKeyboardButton("🔗 اتصال سایت جدید", callback_data="connect")],
@@ -183,7 +189,7 @@ async def callback(update: Update, context):
         context.user_data.clear()
         context.user_data.update(flow="router_connect_url", platform="router")
         return await q.edit_message_text(
-            "🔗 اتصال سایت\n\nآدرس سایت SanaShop یا DeltaJanebi را بفرست.\nمثال: https://shop.example.com"
+            "🔗 اتصال سایت\n\nآدرس سایت SanaShop، DeltaJanebi یا DeltaDevelop را بفرست.\nمثال: https://shop.example.com"
         )
     if data == "owner_sites" and core.is_owner(uid):
         await q.answer()
@@ -216,6 +222,22 @@ async def callback(update: Update, context):
                 reply_markup=routed_site_panel(site, uid),
             )
 
+    if data.startswith("dev:"):
+        # Platform-aware safety: never dispatch Develop actions to SanaShop or Delta.
+        parts = data.split(":")
+        if len(parts) < 3 or not parts[2].isdigit():
+            return await q.answer("دکمه نامعتبر است.", show_alert=True)
+        dev_site = core.get_site(int(parts[2]))
+        if not dev_site or not core.can_access(uid, dev_site["id"]):
+            return await q.answer("دسترسی به سایت وجود ندارد.", show_alert=True)
+        try:
+            platform = await ensure_platform(dev_site)
+        except Exception:
+            return await q.answer("ارتباط با API سایت برقرار نشد.", show_alert=True)
+        if platform != "deltadevelop":
+            return await q.answer("این دکمه مخصوص DeltaDevelop است.", show_alert=True)
+        return await develop.callback(update, context, core)
+
     if data.startswith("d:"):
         # Delta buttons are accepted only for an authenticated Delta site ID.
         # A SanaShop site must never invoke Delta-only API calls, even with
@@ -244,6 +266,12 @@ async def callback(update: Update, context):
             except Exception:
                 pass
             return await q.message.reply_text(f"⚠️ {str(exc)[:700]}", reply_markup=routed_site_panel(site, uid))
+        if p == "deltadevelop":
+            await q.answer("پنل اختصاصی DeltaDevelop باز شد.", show_alert=True)
+            return await q.message.reply_text(
+                "💻 مدیریت DeltaDevelop از پنل اختصاصی خودش انجام می‌شود.",
+                reply_markup=develop.panel(site, uid),
+            )
         if p == "deltajanebi":
             # Hard isolation: a Delta site is never allowed to fall through into SanaShop handlers.
             await q.answer("این دکمه متعلق به پنل Delta نیست؛ پنل اختصاصی سایت باز شد.", show_alert=True)
@@ -270,7 +298,7 @@ async def message(update: Update, context):
         context.user_data.clear()
         context.user_data.update(flow="router_connect_key", platform="router", connect_url=url)
         return await update.message.reply_text(
-            "🔑 حالا API Key مخصوص همین سایت را بفرست. Router خودش تشخیص می‌دهد SanaShop است یا DeltaJanebi."
+            "🔑 حالا API Key مخصوص همین سایت را بفرست. Router نوع SanaShop، DeltaJanebi یا DeltaDevelop را تشخیص می‌دهد."
         )
     if flow == "router_connect_key" and core.is_owner(uid):
         url = context.user_data.get("connect_url")
@@ -288,7 +316,7 @@ async def message(update: Update, context):
         _save_metadata(site_id, platform, meta.get("version") or 0, meta.get("capabilities") or [])
         saved = core.get_site(site_id)
         context.user_data.clear()
-        label = "DeltaJanebi" if platform == "deltajanebi" else "SanaShop"
+        label = {"deltajanebi": "DeltaJanebi", "deltadevelop": "DeltaDevelop"}.get(platform, "SanaShop")
         return await update.message.reply_text(
             f"✅ سایت متصل شد.\n🏪 {saved['name']}\n🧩 نوع مدیریت: {label}\n🌐 {saved['base_url']}",
             reply_markup=InlineKeyboardMarkup([
@@ -321,6 +349,9 @@ async def backup_loop(application):
             for site in sites:
                 try:
                     p = await ensure_platform(site)
+                    if p == "deltadevelop":
+                        # Brochure site: no backup API; no repeated background errors.
+                        continue
                     status = (await core.api(site, "backup_status", timeout=30))["data"]
                     if not status.get("due"):
                         continue
